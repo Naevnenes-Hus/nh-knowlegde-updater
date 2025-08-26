@@ -37,6 +37,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Force redeploy - updated timestamp
     const job: ExportJob = await req.json();
     
     console.log(`Starting background export job: ${job.jobId} (${job.type})`);
