@@ -232,10 +232,7 @@ export class SyncService {
       // Use faster compression for large sync ZIP files
       const blob = await zip.generateAsync({ 
         type: 'blob',
-        compression: 'DEFLATE',
-        compressionOptions: {
-          level: 1 // Faster compression, larger file size
-        }
+        compression: 'STORE' // No compression for maximum compatibility
       });
       
       const timestamp = new Date().toISOString().split('T')[0];
