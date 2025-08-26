@@ -22,7 +22,6 @@ interface SiteManagerProps {
   maxEntries: number;
   onMaxEntriesChange: (value: number) => void;
   onExportEntries: (site: Site) => void;
-  onExportNewEntries: (site: Site) => void;
   onUpdateAllSitemaps: () => void;
   onFetchAllEntries: () => void;
   onExportAllSites: () => void;
@@ -65,7 +64,6 @@ const SiteManager: React.FC<SiteManagerProps> = ({
   maxEntries,
   onMaxEntriesChange,
   onExportEntries,
-  onExportNewEntries,
   onUpdateAllSitemaps,
   onFetchAllEntries,
   onExportAllSites,
@@ -133,7 +131,6 @@ const SiteManager: React.FC<SiteManagerProps> = ({
         onUpdateSitemap={onUpdateSitemap}
         onFetchEntries={onFetchEntries}
         onExportEntries={onExportEntries}
-        onExportNewEntries={onExportNewEntries}
         onDeleteAllEntries={onDeleteAllEntries}
         maxEntries={maxEntries}
         isLoading={isLoading}
@@ -149,7 +146,6 @@ const SiteManager: React.FC<SiteManagerProps> = ({
         onUpdateAllSitemaps={onUpdateAllSitemaps}
         onFetchAllEntries={onFetchAllEntries}
         onExportAllSites={onExportAllSites}
-        onExportAllNewEntries={onExportAllNewEntries}
         onSyncToFolder={onSyncToFolder}
         onDeleteAllEntriesAllSites={onDeleteAllEntriesAllSites}
         onStopOperation={onStopOperation}

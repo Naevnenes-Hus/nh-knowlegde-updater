@@ -229,29 +229,6 @@ function App() {
     }
   };
 
-  const handleExportNewEntries = async (site: Site) => {
-    try {
-      setExportProgress(prev => ({ ...prev, isVisible: true }));
-      
-      await ExportService.exportSiteNewEntriesToZip(site, (progress) => {
-        setExportProgress(prev => ({
-          ...prev,
-          ...progress
-        }));
-      });
-      
-      addLog(`Exported new entries for ${site.name}`, 'success');
-      
-      // Hide splash screen after a short delay to show completion
-      setTimeout(() => {
-        setExportProgress(prev => ({ ...prev, isVisible: false }));
-      }, 2000);
-    } catch (error) {
-      setExportProgress(prev => ({ ...prev, isVisible: false }));
-      addLog(`Failed to export new entries: ${error.message}`, 'error');
-    }
-  };
-
   const handleExportAllSites = async () => {
     try {
       setExportProgress(prev => ({ ...prev, isVisible: true }));
@@ -272,29 +249,6 @@ function App() {
     } catch (error) {
       setExportProgress(prev => ({ ...prev, isVisible: false }));
       addLog(`Failed to export all sites: ${error.message}`, 'error');
-    }
-  };
-
-  const handleExportAllNewEntries = async () => {
-    try {
-      setExportProgress(prev => ({ ...prev, isVisible: true }));
-      
-      await ExportService.exportAllNewEntriesToZip(sites, (progress) => {
-        setExportProgress(prev => ({
-          ...prev,
-          ...progress
-        }));
-      });
-      
-      addLog(`Exported all new entries to ZIP`, 'success');
-      
-      // Hide splash screen after a short delay to show completion
-      setTimeout(() => {
-        setExportProgress(prev => ({ ...prev, isVisible: false }));
-      }, 2000);
-    } catch (error) {
-      setExportProgress(prev => ({ ...prev, isVisible: false }));
-      addLog(`Failed to export all new entries: ${error.message}`, 'error');
     }
   };
 
@@ -404,7 +358,6 @@ function App() {
             onUpdateAllSitemaps={siteOperations.handleUpdateAllSitemaps}
             onFetchAllEntries={siteOperations.handleFetchAllEntries}
             onExportAllSites={handleExportAllSites}
-            onExportAllNewEntries={handleExportAllNewEntries}
             onDeleteAllEntriesAllSites={siteOperations.handleDeleteAllEntriesAllSites}
             onSyncToFolder={handleSyncToFolder}
             onStopOperation={stopCurrentOperation}

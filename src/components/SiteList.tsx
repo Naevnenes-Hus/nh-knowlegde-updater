@@ -18,7 +18,6 @@ interface SiteListProps {
   onUpdateSitemap: (site: Site) => void;
   onFetchEntries: (site: Site) => void;
   onExportEntries: (site: Site) => void;
-  onExportNewEntries: (site: Site) => void;
   onDeleteAllEntries: (site: Site) => void;
   maxEntries: number;
   isLoading: boolean;
@@ -38,7 +37,6 @@ const SiteList: React.FC<SiteListProps> = ({
   onUpdateSitemap,
   onFetchEntries,
   onExportEntries,
-  onExportNewEntries,
   onDeleteAllEntries,
   maxEntries,
   isLoading,
@@ -169,17 +167,6 @@ const SiteList: React.FC<SiteListProps> = ({
                 }}
                 className="w-8 h-8 flex items-center justify-center bg-purple-100 text-purple-700 hover:bg-purple-200 rounded transition-colors"
                 title="Export to ZIP"
-              >
-                <FileArchive size={12} />
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onExportNewEntries(site);
-                }}
-                className="w-8 h-8 flex items-center justify-center bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded transition-colors"
-                title="Export entries stored in database within last 24 hours"
               >
                 <FileArchive size={12} />
               </button>

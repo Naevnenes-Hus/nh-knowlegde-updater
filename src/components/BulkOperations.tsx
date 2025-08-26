@@ -7,7 +7,6 @@ interface BulkOperationsProps {
   onUpdateAllSitemaps: () => void;
   onFetchAllEntries: () => void;
   onExportAllSites: () => void;
-  onExportAllNewEntries: () => void;
   onSyncToFolder: () => void;
   onDeleteAllEntriesAllSites: () => void;
   onStopOperation: () => void;
@@ -19,7 +18,6 @@ const BulkOperations: React.FC<BulkOperationsProps> = ({
   onUpdateAllSitemaps,
   onFetchAllEntries,
   onExportAllSites,
-  onExportAllNewEntries,
   onSyncToFolder,
   onDeleteAllEntriesAllSites,
   onStopOperation
@@ -66,15 +64,6 @@ const BulkOperations: React.FC<BulkOperationsProps> = ({
         >
           <FileArchive size={16} />
           Export All Sites
-        </button>
-        
-        <button
-          onClick={onExportAllNewEntries}
-          className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition-colors"
-          title="Export entries stored in database within last 24 hours"
-        >
-          <FileArchive size={16} />
-          Export All New Entries (24h)
         </button>
         
         <button
