@@ -147,10 +147,10 @@ async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fil
   
   // Create a simple ZIP (in reality, you'd use JSZip and actual data)
   const zipContent = `Export for ${site.name}\nGenerated at: ${new Date().toISOString()}`;
-  const zipBlob = new Blob([zipContent], { type: 'application/zip' });
+  const zipBlob = new Blob([zipContent], { type: 'text/plain' });
   
   const timestamp = new Date().toISOString().split('T')[0];
-  const fileName = `${sanitizeFileName(site.name)}_entries_${timestamp}.zip`;
+  const fileName = `${sanitizeFileName(site.name)}_entries_${timestamp}.txt`;
   
   return { fileName, zipBlob };
 }
@@ -179,10 +179,10 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
   });
   
   const zipContent = `Export for all ${sites.length} sites\nGenerated at: ${new Date().toISOString()}`;
-  const zipBlob = new Blob([zipContent], { type: 'application/zip' });
+  const zipBlob = new Blob([zipContent], { type: 'text/plain' });
   
   const timestamp = new Date().toISOString().split('T')[0];
-  const fileName = `all_sites_export_${timestamp}.zip`;
+  const fileName = `all_sites_export_${timestamp}.txt`;
   
   return { fileName, zipBlob };
 }
@@ -204,10 +204,10 @@ async function processSyncExport(jobId: string, sites: Site[]): Promise<{ fileNa
   }
   
   const zipContent = `Sync export for ${sites.length} sites\nGenerated at: ${new Date().toISOString()}`;
-  const zipBlob = new Blob([zipContent], { type: 'application/zip' });
+  const zipBlob = new Blob([zipContent], { type: 'text/plain' });
   
   const timestamp = new Date().toISOString().split('T')[0];
-  const fileName = `knowledge_sync_${timestamp}.zip`;
+  const fileName = `knowledge_sync_${timestamp}.txt`;
   
   return { fileName, zipBlob };
 }
@@ -222,7 +222,7 @@ async function uploadToStorage(fileName: string, zipBlob: Blob): Promise<string>
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'application/zip',
+      'Content-Type': 'text/plain',
     },
     body: zipBlob,
   });
