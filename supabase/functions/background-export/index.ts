@@ -464,26 +464,8 @@ async function uploadToStorage(fileName: string, zipBlob: Blob): Promise<string>
   
   console.log(`ZIP file uploaded successfully: ${fileName}`);
   
-  // Generate signed URL for download (valid for 7 days)
-  const signedUrlResponse = await fetch(`${supabaseUrl}/storage/v1/object/sign/export-files/${fileName}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      expiresIn: 604800 // 7 days in seconds
-    }),
-  });
-  
-  if (!signedUrlResponse.ok) {
-    const errorText = await signedUrlResponse.text();
-    console.error(`Signed URL generation failed: ${signedUrlResponse.status} ${signedUrlResponse.statusText}`, errorText);
-    throw new Error(`Failed to generate signed URL: ${signedUrlResponse.statusText}`);
-  }
-  
-  const signedUrlData = await signedUrlResponse.json();
-  const downloadUrl = `${supabaseUrl}/storage/v1${signedUrlData.signedURL}`;
+  // Generate public download URL directly
+  const downloadUrl = `${supabaseUrl}/storage/v1/object/public/export-files/${fileName}`;
   
   console.log(`Generated download URL: ${downloadUrl}`);
   return downloadUrl;
