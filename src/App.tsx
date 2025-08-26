@@ -354,7 +354,6 @@ function App() {
             maxEntries={maxEntries}
             onMaxEntriesChange={setMaxEntries}
             onExportEntries={handleExportEntries}
-            onExportNewEntries={handleExportNewEntries}
             onUpdateAllSitemaps={siteOperations.handleUpdateAllSitemaps}
             onFetchAllEntries={siteOperations.handleFetchAllEntries}
             onExportAllSites={handleExportAllSites}
