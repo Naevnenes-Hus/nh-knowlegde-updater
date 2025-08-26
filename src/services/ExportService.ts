@@ -290,6 +290,8 @@ export class ExportService {
     });
     
     try {
+      console.log(`Starting export for site: ${site.name}`);
+      
       const entries = await this.loadEntriesInChunks(site.url, site.name, (chunkProgress) => {
         onProgress?.({
           step: 'loading-entries',
@@ -302,8 +304,30 @@ export class ExportService {
         });
       });
       
+      console.log(`Loaded ${entries.length} entries for export from ${site.name}`);
+      
       if (entries.length === 0) {
-        throw new Error(`No entries found for site: ${site.name}`);
+        console.warn(`No entries found for site: ${site.name}`);
+        // Create empty ZIP with explanation file
+        const zip = new JSZip();
+        zip.file('no_entries_found.txt', `No entries were found for site: ${site.name}\nThis could mean:\n- The site has no entries in the database\n- There was an error loading entries\n- The database connection failed`);
+        
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        const timestamp = new Date().toISOString().split('T')[0];
+        const zipFileName = `${this.sanitizeFileName(site.name)}_no_entries_${timestamp}.zip`;
+        
+        onProgress?.({
+          step: 'complete',
+          currentSite: site.name,
+          sitesProcessed: 1,
+          totalSites: 1,
+          entriesProcessed: 0,
+          totalEntries: 0,
+          isComplete: true
+        });
+        
+        saveAs(blob, zipFileName);
+        return;
       }
 
       await this.exportEntriesToZip(entries, site.name, onProgress);
@@ -352,14 +376,19 @@ export class ExportService {
       throw new Error('No entries to export');
     }
 
+    console.log(`Creating ZIP for ${siteName} with ${entries.length} entries`);
+
     const zip = new JSZip();
     let processedCount = 0;
     
     // Group entries by publication date
     const entriesByDate = this.groupEntriesByDate(entries);
     
+    console.log(`Grouped entries into ${Object.keys(entriesByDate).length} date folders`);
+    
     // Process each date group
     for (const [dateFolder, dateEntries] of Object.entries(entriesByDate)) {
+      console.log(`Processing date folder: ${dateFolder} with ${dateEntries.length} entries`);
       const dateFolderInZip = zip.folder(dateFolder);
       
       if (dateFolderInZip) {
@@ -367,6 +396,16 @@ export class ExportService {
           // Use the GUID (entry.id) as the filename
           const fileName = `${this.sanitizeFileName(entry.id)}.txt`;
           const content = this.formatEntryContent(entry);
+          
+          // Validate content before adding to ZIP
+          if (!content || content.trim().length === 0) {
+            console.warn(`Empty content for entry ${entry.id}, adding placeholder`);
+            const placeholderContent = `Entry ID: ${entry.id}\nTitle: ${entry.title || 'No title'}\nError: Content was empty or invalid`;
+            dateFolderInZip.file(fileName, placeholderContent);
+          } else {
+            dateFolderInZip.file(fileName, content);
+          }
+          
           dateFolderInZip.file(fileName, content);
           processedCount++;
           
@@ -386,6 +425,8 @@ export class ExportService {
       }
     }
 
+    console.log(`Finished processing ${processedCount} entries, generating ZIP...`);
+
     try {
       onProgress?.({
         step: 'generating-zip',
@@ -397,11 +438,17 @@ export class ExportService {
         isComplete: false
       });
       
-      // Increase timeout for ZIP generation - use compression level 1 for faster generation
-      const blob = await zip.generateAsync({ 
+      // Generate ZIP with better error handling
+      console.log(`Generating ZIP blob...`);
+      const blob = await zip.generateAsync({
         type: 'blob',
-        compression: 'STORE' // No compression for maximum compatibility
+        compression: 'STORE', // No compression for maximum compatibility
+        compressionOptions: {
+          level: 0
+        }
       });
+      
+      console.log(`ZIP blob generated, size: ${blob.size} bytes`);
       
       const timestamp = new Date().toISOString().split('T')[0];
       const zipFileName = `${this.sanitizeFileName(siteName)}_entries_${timestamp}.zip`;
@@ -416,8 +463,11 @@ export class ExportService {
         isComplete: true
       });
       
+      console.log(`Saving ZIP file: ${zipFileName}`);
       saveAs(blob, zipFileName);
+      console.log(`Export completed successfully`);
     } catch (error) {
+      console.error(`ZIP generation failed:`, error);
       throw new Error('Failed to generate ZIP file: ' + error);
     }
   }
@@ -430,7 +480,7 @@ export class ExportService {
     siteName: string,
     onProgress?: (progress: { loaded: number; total: number }) => void
   ): Promise<Entry[]> {
-    const chunkSize = 50; // Very small chunks for maximum reliability
+    const chunkSize = 25; // Even smaller chunks for maximum reliability
     let allEntries: Entry[] = [];
     let offset = 0;
     let hasMore = true;
@@ -440,6 +490,12 @@ export class ExportService {
     try {
       totalCount = await StorageService.getActualEntryCount(siteUrl);
       console.log(`Total entries for ${siteName}: ${totalCount}`);
+      
+      // If no entries, return empty array immediately
+      if (totalCount === 0) {
+        console.log(`No entries found for ${siteName}`);
+        return [];
+      }
     } catch (error) {
       console.warn(`Could not get total count for ${siteName}, loading incrementally`);
     }
@@ -448,13 +504,8 @@ export class ExportService {
       try {
         console.log(`Loading chunk ${Math.floor(offset / chunkSize) + 1} for ${siteName} (offset: ${offset}, limit: ${chunkSize})`);
         
-        // Load chunk with timeout handling
-        const chunk = await Promise.race([
-          StorageService.loadEntriesWithLimit(siteUrl, chunkSize, offset),
-          new Promise<Entry[]>((_, reject) => 
-            setTimeout(() => reject(new Error('Chunk load timeout')), 25000) // 25 second timeout per chunk
-          )
-        ]);
+        // Load chunk directly without external timeout
+        const chunk = await StorageService.loadEntriesWithLimit(siteUrl, chunkSize, offset);
         
         console.log(`Loaded ${chunk.length} entries in chunk for ${siteName}`);
         
@@ -482,45 +533,35 @@ export class ExportService {
             hasMore = false;
           }
           
-          // Longer delay between chunks for database stability
-          await new Promise(resolve => setTimeout(resolve, 1500)); // 1.5 second delay
+          // Shorter delay between chunks for faster loading
+          await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 second delay
         }
       } catch (error) {
         console.error(`Error loading chunk for ${siteName} at offset ${offset}:`, error);
         
-        if (error.message === 'Chunk load timeout') {
-          console.warn(`Chunk timeout for ${siteName}, trying smaller chunk size`);
-          // Try with smaller chunk size
-          try {
-            const smallerChunk = await StorageService.loadEntriesWithLimit(siteUrl, 20, offset); // Even smaller fallback
-            if (Array.isArray(smallerChunk) && smallerChunk.length > 0) {
-              allEntries.push(...smallerChunk);
-              offset += smallerChunk.length;
-              
-              onProgress?.({
-                loaded: allEntries.length,
-                total: totalCount || allEntries.length
-              });
-              
-              if (smallerChunk.length < 20) {
-                hasMore = false;
-              }
-              
-              // Extra delay after timeout recovery
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay after recovery
-            } else {
-              if (!Array.isArray(smallerChunk)) {
-                console.warn(`Expected array but got ${typeof smallerChunk} for smaller entries chunk in ${siteName}:`, smallerChunk);
-              }
+        // For any error, try one more time with smaller chunk
+        try {
+          console.warn(`Retrying with smaller chunk size for ${siteName}`);
+          const smallerChunk = await StorageService.loadEntriesWithLimit(siteUrl, 10, offset);
+          if (Array.isArray(smallerChunk) && smallerChunk.length > 0) {
+            allEntries.push(...smallerChunk);
+            offset += smallerChunk.length;
+            
+            onProgress?.({
+              loaded: allEntries.length,
+              total: totalCount || allEntries.length
+            });
+            
+            if (smallerChunk.length < 10) {
               hasMore = false;
             }
-          } catch (smallerError) {
-            console.error(`Even smaller chunk failed for ${siteName}:`, smallerError);
+            
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } else {
             hasMore = false;
           }
-        } else {
-          // For other errors, stop loading this site
-          console.error(`Stopping chunk loading for ${siteName} due to error:`, error);
+        } catch (retryError) {
+          console.error(`Retry failed for ${siteName}:`, retryError);
           hasMore = false;
         }
       }
