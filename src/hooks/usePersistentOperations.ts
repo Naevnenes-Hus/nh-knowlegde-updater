@@ -55,6 +55,9 @@ export const usePersistentOperations = ({
         // Clean up old operations
         await PersistentOperationService.cleanupOldOperations();
         
+        // Clean up duplicate operations for the same site
+        await cleanupDuplicateOperations();
+        
         // Load active operations from database with retry logic
         let operations: any[] = [];
         let retryCount = 0;
@@ -166,6 +169,50 @@ export const usePersistentOperations = ({
       initializationRef.current = false;
     };
   }, []); // Remove addLog dependency to prevent re-initialization
+
+  const cleanupDuplicateOperations = async () => {
+    try {
+      const operations = await PersistentOperationService.loadOperations();
+      const duplicateGroups = new Map<string, PersistentOperation[]>();
+      
+      // Group operations by site ID and type
+      operations.forEach(op => {
+        if (op.status === 'running' || op.status === 'paused') {
+          const key = `${op.siteId}-${op.type}`;
+          if (!duplicateGroups.has(key)) {
+            duplicateGroups.set(key, []);
+          }
+          duplicateGroups.get(key)!.push(op);
+        }
+      });
+      
+      // Remove duplicates, keeping only the most recent one
+      for (const [key, ops] of duplicateGroups) {
+        if (ops.length > 1) {
+          console.log(`🧹 Found ${ops.length} duplicate operations for ${key}, cleaning up...`);
+          
+          // Sort by last update time, keep the most recent
+          ops.sort((a, b) => b.lastUpdateTime - a.lastUpdateTime);
+          const keepOperation = ops[0];
+          const removeOperations = ops.slice(1);
+          
+          // Remove the older duplicates
+          for (const op of removeOperations) {
+            try {
+              await PersistentOperationService.forceRemoveOperation(op.id);
+              console.log(`🗑️ Removed duplicate operation ${op.id} for ${op.siteName}`);
+            } catch (error) {
+              console.error(`Failed to remove duplicate operation ${op.id}:`, error);
+            }
+          }
+          
+          addLog(`🧹 Cleaned up ${removeOperations.length} duplicate operations for ${keepOperation.siteName}`, 'info');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to cleanup duplicate operations:', error);
+    }
+  };
 
   const resumeOperation = async (operation: PersistentOperation, currentSites?: Site[]) => {
     if (processingRef.current.has(operation.id)) {
@@ -636,11 +683,17 @@ export const usePersistentOperations = ({
       console.log(`🚀 START: Starting persistent fetch for ${site.name}`);
       addLog(`🚀 Starting persistent fetch for ${site.name}`, 'info');
       
-      // Check if there's already an operation for this site
-      const existingOperation = await PersistentOperationService.getOperationBySiteId(site.id);
-      if (existingOperation) {
-        console.log(`⚠️ START: Operation already running for ${site.name}`);
-        addLog(`⚠️ Operation already running for ${site.name}`, 'warning');
+      // Check if there's already an operation for this site (more thorough check)
+      const allOperations = await PersistentOperationService.getActiveOperations();
+      const existingOperations = allOperations.filter(op => 
+        op.siteId === site.id && 
+        (op.status === 'running' || op.status === 'paused') &&
+        op.type === 'fetch_entries'
+      );
+      
+      if (existingOperations.length > 0) {
+        console.log(`⚠️ START: ${existingOperations.length} fetch operation(s) already exist for ${site.name}`);
+        addLog(`⚠️ Fetch operation already running for ${site.name}`, 'warning');
         return;
       }
 

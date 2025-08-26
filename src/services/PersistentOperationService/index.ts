@@ -124,8 +124,21 @@ export class PersistentOperationService {
   }
 
   static async getOperationBySiteId(siteId: string): Promise<PersistentOperation | null> {
-    const operations = await this.loadOperations();
-    return operations.find(op => op.siteId === siteId && (op.status === 'running' || op.status === 'paused')) || null;
+    try {
+      const operations = await this.loadOperations();
+      // Return the most recent active operation for this site
+      const siteOperations = operations.filter(op => 
+        op.siteId === siteId && 
+        (op.status === 'running' || op.status === 'paused')
+      );
+      
+      // Sort by last update time and return the most recent
+      siteOperations.sort((a, b) => b.lastUpdateTime - a.lastUpdateTime);
+      return siteOperations[0] || null;
+    } catch (error) {
+      console.error('Failed to get operation by site ID:', error);
+      return null;
+    }
   }
 
   static async removeOperation(operationId: string): Promise<void> {
