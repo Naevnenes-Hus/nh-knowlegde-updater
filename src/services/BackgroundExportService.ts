@@ -370,7 +370,6 @@ export class BackgroundExportService {
     const prefix = environment === 'development' ? 'dev_' : '';
     return `${prefix}${this.TABLE_NAME}`;
   }
-}
 
   /**
    * Delete a completed job and its associated file
@@ -416,3 +415,4 @@ export class BackgroundExportService {
       throw new Error(`Failed to delete job: ${deleteError.message}`);
     }
   }
+}
