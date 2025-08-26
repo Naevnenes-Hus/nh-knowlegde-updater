@@ -224,13 +224,31 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
           // Sort entries by published date (newest first)
           entries.sort((a, b) => new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime());
           
-          // Add all entries to the site folder using GUID as filename
-          entries.forEach((entry) => {
-            const fileName = `${sanitizeFileName(entry.id)}.txt`;
-            const content = formatEntryContent(entry);
-            siteFolder.file(fileName, content);
-            totalEntries++;
-          });
+          // Group entries by publication date and create date folders
+          const entriesByDate = groupEntriesByDate(entries);
+          
+          // Create a folder for each date
+          for (const [dateFolder, dateEntries] of Object.entries(entriesByDate)) {
+            const dateFolderInSite = siteFolder.folder(dateFolder);
+            
+            if (dateFolderInSite) {
+              dateEntries.forEach((entry) => {
+                const fileName = `${sanitizeFileName(entry.id)}.txt`;
+                const content = formatEntryContent(entry);
+                dateFolderInSite.file(fileName, content);
+                totalEntries++;
+              });
+            }
+          }
+            
+            if (dateFolderInSite) {
+              dateEntries.forEach((entry) => {
+                const fileName = `${sanitizeFileName(entry.id)}.txt`;
+                const content = formatEntryContent(entry);
+                dateFolderInSite.file(fileName, content);
+              });
+            }
+          }
           
           // Add site info file
           const siteInfo = formatSiteInfo(site, entries.length);
@@ -518,4 +536,34 @@ function sanitizeFileName(fileName: string): string {
     .replace(/[<>:"/\\|?*]/g, '_')
     .replace(/\s+/g, '_')
     .substring(0, 100);
+}
+
+/**
+ * Group entries by their publication date
+ */
+function groupEntriesByDate(entries: Entry[]): { [dateFolder: string]: Entry[] } {
+  const groups: { [dateFolder: string]: Entry[] } = {};
+  
+  entries.forEach(entry => {
+    let dateFolder = 'unknown-date';
+    
+    if (entry.published_date) {
+      try {
+        const date = new Date(entry.published_date);
+        if (!isNaN(date.getTime())) {
+          // Format as YYYY-MM-DD
+          dateFolder = date.toISOString().split('T')[0];
+        }
+      } catch (error) {
+        console.warn(`Invalid date format for entry ${entry.id}: ${entry.published_date}`);
+      }
+    }
+    
+    if (!groups[dateFolder]) {
+      groups[dateFolder] = [];
+    }
+    groups[dateFolder].push(entry);
+  });
+  
+  return groups;
 }
