@@ -15,6 +15,8 @@ import { useSiteOperations } from './hooks/useSiteOperations';
 import { useEntryOperations } from './hooks/useEntryOperations';
 import { useAutoLoad } from './hooks/useAutoLoad';
 import { usePersistentOperations } from './hooks/usePersistentOperations';
+import { BackgroundExportService } from './services/BackgroundExportService';
+import BackgroundExportModal from './components/BackgroundExportModal';
 
 function App() {
   const [isInitializing, setIsInitializing] = useState(true);
@@ -66,6 +68,7 @@ function App() {
     totalEntries: 0,
     isComplete: false
   });
+  const [showBackgroundExportModal, setShowBackgroundExportModal] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
@@ -207,71 +210,26 @@ function App() {
 
   const recentNewEntries = getRecentNewEntries(entries);
   const handleExportEntries = async (site: Site) => {
-    try {
-      setExportProgress(prev => ({ ...prev, isVisible: true }));
-      
-      await ExportService.exportSiteEntriesToZip(site, (progress) => {
-        setExportProgress(prev => ({
-          ...prev,
-          ...progress
-        }));
-      });
-      
-      addLog(`Exported entries for ${site.name}`, 'success');
-      
-      // Hide splash screen after a short delay to show completion
-      setTimeout(() => {
-        setExportProgress(prev => ({ ...prev, isVisible: false }));
-      }, 2000);
-    } catch (error) {
-      setExportProgress(prev => ({ ...prev, isVisible: false }));
-      addLog(`Failed to export entries: ${error.message}`, 'error');
-    }
+    // Open background export modal instead of immediate export
+    setShowBackgroundExportModal(true);
   };
 
   const handleExportAllSites = async () => {
-    try {
-      setExportProgress(prev => ({ ...prev, isVisible: true }));
-      
-      await ExportService.exportAllSitesToZip(sites, (progress) => {
-        setExportProgress(prev => ({
-          ...prev,
-          ...progress
-        }));
-      });
-      
-      addLog(`Exported all sites to ZIP`, 'success');
-      
-      // Hide splash screen after a short delay to show completion
-      setTimeout(() => {
-        setExportProgress(prev => ({ ...prev, isVisible: false }));
-      }, 2000);
-    } catch (error) {
-      setExportProgress(prev => ({ ...prev, isVisible: false }));
-      addLog(`Failed to export all sites: ${error.message}`, 'error');
-    }
+    // Open background export modal instead of immediate export
+    setShowBackgroundExportModal(true);
   };
 
   const handleSyncToFolder = async () => {
+    // Open background export modal instead of immediate sync
+    setShowBackgroundExportModal(true);
+  };
+
+  const handleStartBackgroundExport = async (type: 'single_site' | 'all_sites' | 'sync', siteId?: string) => {
     try {
-      setSyncProgress(prev => ({ ...prev, isVisible: true }));
-      
-      await SyncService.syncToFolder(sites, (progress) => {
-        setSyncProgress(prev => ({
-          ...prev,
-          ...progress
-        }));
-      });
-      
-      addLog(`Sync ZIP download completed`, 'success');
-      
-      // Hide splash screen after a short delay to show completion
-      setTimeout(() => {
-        setSyncProgress(prev => ({ ...prev, isVisible: false }));
-      }, 2000);
+      const jobId = await BackgroundExportService.startExport(type, sites, siteId);
+      addLog(`Started background export job: ${jobId}`, 'success');
     } catch (error) {
-      setSyncProgress(prev => ({ ...prev, isVisible: false }));
-      addLog(`Failed to sync to folder: ${error.message}`, 'error');
+      addLog(`Failed to start background export: ${error.message}`, 'error');
     }
   };
 
@@ -402,6 +360,15 @@ function App() {
       <ExportSplashScreen
         isVisible={exportProgress.isVisible}
         progress={exportProgress}
+      />
+      
+      {/* Background Export Modal */}
+      <BackgroundExportModal
+        isOpen={showBackgroundExportModal}
+        onClose={() => setShowBackgroundExportModal(false)}
+        onStartExport={handleStartBackgroundExport}
+        sites={sites}
+        selectedSite={selectedSite}
       />
     </div>
   );

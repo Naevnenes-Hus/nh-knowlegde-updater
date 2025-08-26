@@ -25,7 +25,6 @@ interface SiteManagerProps {
   onUpdateAllSitemaps: () => void;
   onFetchAllEntries: () => void;
   onExportAllSites: () => void;
-  onExportAllNewEntries: () => void;
   onDeleteAllEntriesAllSites: () => void;
   onSyncToFolder: () => void;
   onStopOperation: () => void;
@@ -67,7 +66,6 @@ const SiteManager: React.FC<SiteManagerProps> = ({
   onUpdateAllSitemaps,
   onFetchAllEntries,
   onExportAllSites,
-  onExportAllNewEntries,
   onDeleteAllEntriesAllSites,
   onSyncToFolder,
   onStopOperation,

@@ -166,7 +166,7 @@ const SiteList: React.FC<SiteListProps> = ({
                   onExportEntries(site);
                 }}
                 className="w-8 h-8 flex items-center justify-center bg-purple-100 text-purple-700 hover:bg-purple-200 rounded transition-colors"
-                title="Export to ZIP"
+                title="Background Export Manager"
               >
                 <FileArchive size={12} />
               </button>

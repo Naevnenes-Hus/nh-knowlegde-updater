@@ -63,22 +63,13 @@ const BulkOperations: React.FC<BulkOperationsProps> = ({
           className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-purple-100 text-purple-700 hover:bg-purple-200 rounded-lg transition-colors"
         >
           <FileArchive size={16} />
-          Export All Sites
+          Background Export Manager
         </button>
         
         <button
           onClick={onSyncToFolder}
-          className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 rounded-lg transition-colors"
-          title="Download sync as ZIP file with GUID filenames"
-        >
-          <FolderSync size={16} />
-          Download Sync ZIP
-        </button>
-        
-        <button
-          onClick={onDeleteAllEntriesAllSites}
-          disabled={isLoading}
           className="w-full flex items-center justify-center gap-2 p-2 text-sm bg-red-100 text-red-700 hover:bg-red-200 rounded-lg transition-colors disabled:opacity-50"
+          disabled={isLoading}
         >
           <Trash2 size={16} />
           Delete All Entries (All Sites)
