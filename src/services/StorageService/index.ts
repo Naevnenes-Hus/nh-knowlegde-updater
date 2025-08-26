@@ -426,7 +426,7 @@ export class StorageService {
     }
   }
 
-  static async loadUnseenEntriesWithLimit(siteUrl: string, limit: number, offset: number): Promise<Entry[]> {
+  static async getSitemapCount(siteUrl: string): Promise<number> {
     const storageType = getStorageType();
     console.log(`📊 Getting sitemap count for ${new URL(siteUrl).hostname} from ${storageType}`);
 
