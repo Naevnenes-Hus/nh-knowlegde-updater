@@ -346,7 +346,7 @@ async function uploadToStorage(fileName: string, exportBlob: Blob): Promise<stri
   
   // Upload to storage bucket
   const uploadResponse = await fetch(`${supabaseUrl}/storage/v1/object/export-files/${fileName}`, {
-    method: 'POST',
+    method: 'PUT',
     headers: {
       'Authorization': `Bearer ${supabaseServiceKey}`,
       'Content-Type': 'text/plain; charset=utf-8',
