@@ -10,6 +10,17 @@ interface Site {
   name: string;
 }
 
+interface Entry {
+  id: string;
+  title: string;
+  abstract: string;
+  body: string;
+  published_date: string;
+  type: string;
+  seen: boolean;
+  metadata: any;
+}
+
 interface ExportJob {
   jobId: string;
   type: 'single_site' | 'all_sites' | 'sync';
@@ -40,7 +51,7 @@ Deno.serve(async (req: Request) => {
 
     // Process the export based on type
     let fileName: string;
-    let zipBlob: Blob;
+    let exportContent: string;
     
     switch (job.type) {
       case 'single_site':
@@ -51,23 +62,26 @@ Deno.serve(async (req: Request) => {
         if (!site) {
           throw new Error('Site not found');
         }
-        ({ fileName, zipBlob } = await processSingleSiteExport(job.jobId, site));
+        ({ fileName, exportContent } = await processSingleSiteExport(job.jobId, site));
         break;
         
       case 'all_sites':
-        ({ fileName, zipBlob } = await processAllSitesExport(job.jobId, job.sites));
+        ({ fileName, exportContent } = await processAllSitesExport(job.jobId, job.sites));
         break;
         
       case 'sync':
-        ({ fileName, zipBlob } = await processSyncExport(job.jobId, job.sites));
+        ({ fileName, exportContent } = await processSyncExport(job.jobId, job.sites));
         break;
         
       default:
         throw new Error(`Unknown export type: ${job.type}`);
     }
 
+    // Create blob with proper content
+    const exportBlob = new Blob([exportContent], { type: 'text/plain; charset=utf-8' });
+    
     // Upload to Supabase Storage
-    const downloadUrl = await uploadToStorage(fileName, zipBlob);
+    const downloadUrl = await uploadToStorage(fileName, exportBlob);
     
     // Mark job as completed
     await updateJobStatus(job.jobId, 'completed', {
@@ -121,115 +135,338 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fileName: string; zipBlob: Blob }> {
-  // This is a simplified version - in reality, you'd need to:
-  // 1. Connect to your database
-  // 2. Load entries for the site
-  // 3. Create ZIP with date-based folders
-  // 4. Update progress throughout
+async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fileName: string; exportContent: string }> {
+  console.log(`Processing single site export for: ${site.name}`);
   
   await updateJobStatus(jobId, 'processing', {
-    current: 25,
+    current: 10,
     total: 100,
     step: 'loading-entries',
     currentSite: site.name
   });
   
-  // Simulate processing time
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  // Load entries from database
+  const entries = await loadEntriesForSite(site);
+  console.log(`Loaded ${entries.length} entries for ${site.name}`);
   
   await updateJobStatus(jobId, 'processing', {
-    current: 75,
+    current: 60,
     total: 100,
-    step: 'creating-zip',
+    step: 'creating-export',
     currentSite: site.name
   });
   
-  // Create a simple ZIP (in reality, you'd use JSZip and actual data)
-  const zipContent = `Export for ${site.name}\nGenerated at: ${new Date().toISOString()}`;
-  const zipBlob = new Blob([zipContent], { type: 'text/plain' });
+  // Create export content
+  const exportContent = createExportContent([{ site, entries }]);
+  
+  await updateJobStatus(jobId, 'processing', {
+    current: 90,
+    total: 100,
+    step: 'finalizing',
+    currentSite: site.name
+  });
   
   const timestamp = new Date().toISOString().split('T')[0];
   const fileName = `${sanitizeFileName(site.name)}_entries_${timestamp}.txt`;
   
-  return { fileName, zipBlob };
+  return { fileName, exportContent };
 }
 
-async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fileName: string; zipBlob: Blob }> {
-  let processed = 0;
+async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fileName: string; exportContent: string }> {
+  console.log(`Processing all sites export for ${sites.length} sites`);
   
-  for (const site of sites) {
+  const siteExports: { site: Site; entries: Entry[] }[] = [];
+  
+  for (let i = 0; i < sites.length; i++) {
+    const site = sites[i];
+    
     await updateJobStatus(jobId, 'processing', {
-      current: processed,
-      total: sites.length,
-      step: 'processing-site',
+      current: Math.round((i / sites.length) * 80),
+      total: 100,
+      step: 'loading-entries',
       currentSite: site.name
     });
     
-    // Simulate processing each site
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    processed++;
+    try {
+      const entries = await loadEntriesForSite(site);
+      console.log(`Loaded ${entries.length} entries for ${site.name}`);
+      siteExports.push({ site, entries });
+    } catch (error) {
+      console.error(`Failed to load entries for ${site.name}:`, error);
+      // Continue with other sites
+      siteExports.push({ site, entries: [] });
+    }
   }
   
   await updateJobStatus(jobId, 'processing', {
-    current: sites.length,
-    total: sites.length,
-    step: 'creating-zip',
+    current: 85,
+    total: 100,
+    step: 'creating-export',
     currentSite: ''
   });
   
-  const zipContent = `Export for all ${sites.length} sites\nGenerated at: ${new Date().toISOString()}`;
-  const zipBlob = new Blob([zipContent], { type: 'text/plain' });
+  const exportContent = createExportContent(siteExports);
   
   const timestamp = new Date().toISOString().split('T')[0];
   const fileName = `all_sites_export_${timestamp}.txt`;
   
-  return { fileName, zipBlob };
+  return { fileName, exportContent };
 }
 
-async function processSyncExport(jobId: string, sites: Site[]): Promise<{ fileName: string; zipBlob: Blob }> {
-  let processed = 0;
+async function processSyncExport(jobId: string, sites: Site[]): Promise<{ fileName: string; exportContent: string }> {
+  console.log(`Processing sync export for ${sites.length} sites`);
   
-  for (const site of sites) {
+  const siteExports: { site: Site; entries: Entry[] }[] = [];
+  
+  for (let i = 0; i < sites.length; i++) {
+    const site = sites[i];
+    
     await updateJobStatus(jobId, 'processing', {
-      current: processed,
-      total: sites.length,
+      current: Math.round((i / sites.length) * 80),
+      total: 100,
       step: 'syncing-site',
       currentSite: site.name
     });
     
-    // Simulate sync processing
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    processed++;
+    try {
+      const entries = await loadEntriesForSite(site);
+      console.log(`Loaded ${entries.length} entries for ${site.name}`);
+      siteExports.push({ site, entries });
+    } catch (error) {
+      console.error(`Failed to load entries for ${site.name}:`, error);
+      siteExports.push({ site, entries: [] });
+    }
   }
   
-  const zipContent = `Sync export for ${sites.length} sites\nGenerated at: ${new Date().toISOString()}`;
-  const zipBlob = new Blob([zipContent], { type: 'text/plain' });
+  await updateJobStatus(jobId, 'processing', {
+    current: 85,
+    total: 100,
+    step: 'creating-sync',
+    currentSite: ''
+  });
+  
+  const exportContent = createSyncContent(siteExports);
   
   const timestamp = new Date().toISOString().split('T')[0];
   const fileName = `knowledge_sync_${timestamp}.txt`;
   
-  return { fileName, zipBlob };
+  return { fileName, exportContent };
 }
 
-async function uploadToStorage(fileName: string, zipBlob: Blob): Promise<string> {
-  // Get Supabase client
+async function loadEntriesForSite(site: Site): Promise<Entry[]> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  // Determine table names based on environment
+  const environment = Deno.env.get('VITE_ENVIRONMENT') || 'development';
+  const sitesTable = environment === 'development' ? 'dev_sites' : 'sites';
+  const entriesTable = environment === 'development' ? 'dev_entries' : 'entries';
+  
+  console.log(`Loading entries for site ${site.name} from ${entriesTable} table`);
+  
+  // First get the site ID from database
+  const siteResponse = await fetch(`${supabaseUrl}/rest/v1/${sitesTable}?url=eq.${encodeURIComponent(site.url)}&select=id`, {
+    headers: {
+      'Authorization': `Bearer ${supabaseServiceKey}`,
+      'apikey': supabaseServiceKey,
+    },
+  });
+  
+  if (!siteResponse.ok) {
+    throw new Error(`Failed to fetch site: ${siteResponse.statusText}`);
+  }
+  
+  const siteData = await siteResponse.json();
+  if (!siteData || siteData.length === 0) {
+    console.log(`No site found for URL: ${site.url}`);
+    return [];
+  }
+  
+  const siteId = siteData[0].id;
+  console.log(`Found site ID: ${siteId} for ${site.name}`);
+  
+  // Load entries in chunks to avoid timeout
+  const allEntries: Entry[] = [];
+  const chunkSize = 100;
+  let offset = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    console.log(`Loading entries chunk: offset ${offset}, limit ${chunkSize}`);
+    
+    const entriesResponse = await fetch(
+      `${supabaseUrl}/rest/v1/${entriesTable}?site_id=eq.${siteId}&order=published_date.desc&limit=${chunkSize}&offset=${offset}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'apikey': supabaseServiceKey,
+        },
+      }
+    );
+    
+    if (!entriesResponse.ok) {
+      throw new Error(`Failed to fetch entries: ${entriesResponse.statusText}`);
+    }
+    
+    const entriesChunk = await entriesResponse.json();
+    console.log(`Loaded ${entriesChunk.length} entries in chunk`);
+    
+    if (entriesChunk.length === 0) {
+      hasMore = false;
+    } else {
+      allEntries.push(...entriesChunk);
+      offset += entriesChunk.length;
+      
+      // If we got fewer entries than requested, we've reached the end
+      if (entriesChunk.length < chunkSize) {
+        hasMore = false;
+      }
+    }
+    
+    // Add small delay to prevent overwhelming the database
+    if (hasMore) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  console.log(`Total entries loaded for ${site.name}: ${allEntries.length}`);
+  return allEntries;
+}
+
+function createExportContent(siteExports: { site: Site; entries: Entry[] }[]): string {
+  const lines: string[] = [];
+  
+  lines.push('Knowledge Export');
+  lines.push('================');
+  lines.push('');
+  lines.push(`Export Date: ${new Date().toLocaleString()}`);
+  lines.push(`Total Sites: ${siteExports.length}`);
+  
+  const totalEntries = siteExports.reduce((sum, se) => sum + se.entries.length, 0);
+  lines.push(`Total Entries: ${totalEntries}`);
+  lines.push('');
+  
+  for (const { site, entries } of siteExports) {
+    lines.push(`Site: ${site.name}`);
+    lines.push(`URL: ${site.url}`);
+    lines.push(`Entries: ${entries.length}`);
+    lines.push(''.padEnd(50, '-'));
+    lines.push('');
+    
+    // Sort entries by published date (newest first)
+    const sortedEntries = entries.sort((a, b) => 
+      new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime()
+    );
+    
+    for (const entry of sortedEntries) {
+      lines.push(`ID: ${entry.id}`);
+      lines.push(`Title: ${entry.title || 'No title'}`);
+      lines.push(`Type: ${entry.type || 'publication'}`);
+      lines.push(`Published: ${entry.published_date || 'Unknown date'}`);
+      lines.push(`Seen: ${entry.seen ? 'Yes' : 'No'}`);
+      
+      if (entry.abstract) {
+        lines.push(`Abstract: ${entry.abstract}`);
+      }
+      
+      if (entry.body) {
+        lines.push(`Body: ${entry.body.substring(0, 500)}${entry.body.length > 500 ? '...' : ''}`);
+      }
+      
+      lines.push('');
+    }
+    
+    lines.push('');
+  }
+  
+  return lines.join('\n');
+}
+
+function createSyncContent(siteExports: { site: Site; entries: Entry[] }[]): string {
+  const lines: string[] = [];
+  
+  lines.push('Knowledge Sync Export');
+  lines.push('===================');
+  lines.push('');
+  lines.push(`Sync Date: ${new Date().toLocaleString()}`);
+  lines.push(`Total Sites: ${siteExports.length}`);
+  
+  const totalEntries = siteExports.reduce((sum, se) => sum + se.entries.length, 0);
+  const newEntries = siteExports.reduce((sum, se) => sum + se.entries.filter(e => !e.seen).length, 0);
+  
+  lines.push(`Total Entries: ${totalEntries}`);
+  lines.push(`New Entries: ${newEntries}`);
+  lines.push('');
+  
+  for (const { site, entries } of siteExports) {
+    const siteNewEntries = entries.filter(e => !e.seen);
+    
+    lines.push(`Site: ${site.name}`);
+    lines.push(`URL: ${site.url}`);
+    lines.push(`Total Entries: ${entries.length}`);
+    lines.push(`New Entries: ${siteNewEntries.length}`);
+    lines.push(''.padEnd(50, '-'));
+    lines.push('');
+    
+    if (siteNewEntries.length > 0) {
+      lines.push('NEW ENTRIES:');
+      lines.push('');
+      
+      // Sort new entries by published date (newest first)
+      const sortedNewEntries = siteNewEntries.sort((a, b) => 
+        new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime()
+      );
+      
+      for (const entry of sortedNewEntries) {
+        lines.push(`ID: ${entry.id}`);
+        lines.push(`Title: ${entry.title || 'No title'}`);
+        lines.push(`Type: ${entry.type || 'publication'}`);
+        lines.push(`Published: ${entry.published_date || 'Unknown date'}`);
+        
+        if (entry.abstract) {
+          lines.push(`Abstract: ${entry.abstract}`);
+        }
+        
+        if (entry.body) {
+          lines.push(`Body: ${entry.body.substring(0, 300)}${entry.body.length > 300 ? '...' : ''}`);
+        }
+        
+        lines.push('');
+      }
+    } else {
+      lines.push('No new entries for this site.');
+      lines.push('');
+    }
+    
+    lines.push('');
+  }
+  
+  return lines.join('\n');
+}
+
+async function uploadToStorage(fileName: string, exportBlob: Blob): Promise<string> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  console.log(`Uploading file: ${fileName}, size: ${exportBlob.size} bytes`);
   
   // Upload to storage bucket
   const uploadResponse = await fetch(`${supabaseUrl}/storage/v1/object/export-files/${fileName}`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'text/plain',
+      'Content-Type': 'text/plain; charset=utf-8',
     },
-    body: zipBlob,
+    body: exportBlob,
   });
   
   if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    console.error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`, errorText);
     throw new Error(`Failed to upload file: ${uploadResponse.statusText}`);
   }
+  
+  console.log(`File uploaded successfully: ${fileName}`);
   
   // Generate signed URL for download (valid for 7 days)
   const signedUrlResponse = await fetch(`${supabaseUrl}/storage/v1/object/sign/export-files/${fileName}`, {
@@ -244,11 +481,16 @@ async function uploadToStorage(fileName: string, zipBlob: Blob): Promise<string>
   });
   
   if (!signedUrlResponse.ok) {
+    const errorText = await signedUrlResponse.text();
+    console.error(`Signed URL generation failed: ${signedUrlResponse.status} ${signedUrlResponse.statusText}`, errorText);
     throw new Error(`Failed to generate signed URL: ${signedUrlResponse.statusText}`);
   }
   
   const signedUrlData = await signedUrlResponse.json();
-  return `${supabaseUrl}/storage/v1${signedUrlData.signedURL}`;
+  const downloadUrl = `${supabaseUrl}/storage/v1${signedUrlData.signedURL}`;
+  
+  console.log(`Generated download URL: ${downloadUrl}`);
+  return downloadUrl;
 }
 
 async function updateJobStatus(
