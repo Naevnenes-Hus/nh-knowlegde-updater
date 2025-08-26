@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Download, Clock, CheckCircle, AlertCircle, FileArchive, Loader2 } from 'lucide-react';
+import { X, Download, Clock, CheckCircle, AlertCircle, FileArchive, Loader2, Trash2 } from 'lucide-react';
 import { BackgroundExportJob, BackgroundExportService } from '../services/BackgroundExportService';
 
 interface BackgroundExportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onStartExport: (type: 'single_site' | 'all_sites' | 'sync', siteId?: string) => void;
+  onStartExport: (type: 'single_site' | 'all_sites', siteId?: string) => void;
   sites: any[];
   selectedSite?: any;
 }
@@ -60,6 +60,15 @@ const BackgroundExportModal: React.FC<BackgroundExportModalProps> = ({
       await loadJobs();
     } catch (error) {
       console.error('Failed to cancel job:', error);
+    }
+  };
+
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      await BackgroundExportService.deleteJob(jobId);
+      await loadJobs();
+    } catch (error) {
+      console.error('Failed to delete job:', error);
     }
   };
 
@@ -135,16 +144,6 @@ const BackgroundExportModal: React.FC<BackgroundExportModalProps> = ({
                 <FileArchive className="w-8 h-8 text-blue-600 mx-auto mb-2" />
                 <div className="text-sm font-medium text-gray-900">Export All Sites</div>
                 <div className="text-xs text-gray-500">{sites.length} sites</div>
-              </button>
-              
-              <button
-                onClick={() => handleStartExport('sync')}
-                disabled={isLoading}
-                className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-              >
-                <FileArchive className="w-8 h-8 text-indigo-600 mx-auto mb-2" />
-                <div className="text-sm font-medium text-gray-900">Sync Download</div>
-                <div className="text-xs text-gray-500">With GUID filenames</div>
               </button>
             </div>
           </div>
@@ -242,6 +241,17 @@ const BackgroundExportModal: React.FC<BackgroundExportModalProps> = ({
                           Download
                         </a>
                       )}
+                      <button
+                        onClick={() => {
+                          if (window.confirm('Delete this download? This will remove the file from storage and cannot be undone.')) {
+                            handleDeleteJob(job.id);
+                          }
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 hover:bg-red-200 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </button>
                     </div>
                     
                     {job.errorMessage && (

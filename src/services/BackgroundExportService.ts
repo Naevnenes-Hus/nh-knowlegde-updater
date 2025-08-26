@@ -31,7 +31,7 @@ export class BackgroundExportService {
    * Start a background export job
    */
   static async startExport(
-    type: 'single_site' | 'all_sites' | 'sync',
+    type: 'single_site' | 'all_sites',
     sites: Site[],
     siteId?: string
   ): Promise<string> {
@@ -371,3 +371,48 @@ export class BackgroundExportService {
     return `${prefix}${this.TABLE_NAME}`;
   }
 }
+
+  /**
+   * Delete a completed job and its associated file
+   */
+  static async deleteJob(jobId: string): Promise<void> {
+    const db = DatabaseService.getInstance();
+    const supabase = db.getSupabaseClient();
+    
+    if (!supabase) {
+      throw new Error('Database not available');
+    }
+
+    // First get the job to find the file name
+    const { data: job, error: fetchError } = await supabase
+      .from(this.getTableName())
+      .select('file_name')
+      .eq('id', jobId)
+      .single();
+
+    if (fetchError) {
+      throw new Error(`Failed to fetch job: ${fetchError.message}`);
+    }
+
+    // Delete the file from storage if it exists
+    if (job?.file_name) {
+      const { error: storageError } = await supabase.storage
+        .from(this.STORAGE_BUCKET)
+        .remove([job.file_name]);
+
+      if (storageError) {
+        console.warn(`Failed to delete file from storage: ${storageError.message}`);
+        // Continue with job deletion even if file deletion fails
+      }
+    }
+
+    // Delete the job record
+    const { error: deleteError } = await supabase
+      .from(this.getTableName())
+      .delete()
+      .eq('id', jobId);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete job: ${deleteError.message}`);
+    }
+  }

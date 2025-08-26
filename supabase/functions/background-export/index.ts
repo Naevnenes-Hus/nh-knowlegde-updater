@@ -68,11 +68,7 @@ Deno.serve(async (req: Request) => {
       case 'all_sites':
         ({ fileName, exportContent } = await processAllSitesExport(job.jobId, job.sites));
         break;
-        
-      case 'sync':
-        ({ fileName, exportContent } = await processSyncExport(job.jobId, job.sites));
-        break;
-        
+
       default:
         throw new Error(`Unknown export type: ${job.type}`);
     }
@@ -213,46 +209,6 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
   return { fileName, exportContent };
 }
 
-async function processSyncExport(jobId: string, sites: Site[]): Promise<{ fileName: string; exportContent: string }> {
-  console.log(`Processing sync export for ${sites.length} sites`);
-  
-  const siteExports: { site: Site; entries: Entry[] }[] = [];
-  
-  for (let i = 0; i < sites.length; i++) {
-    const site = sites[i];
-    
-    await updateJobStatus(jobId, 'processing', {
-      current: Math.round((i / sites.length) * 80),
-      total: 100,
-      step: 'syncing-site',
-      currentSite: site.name
-    });
-    
-    try {
-      const entries = await loadEntriesForSite(site);
-      console.log(`Loaded ${entries.length} entries for ${site.name}`);
-      siteExports.push({ site, entries });
-    } catch (error) {
-      console.error(`Failed to load entries for ${site.name}:`, error);
-      siteExports.push({ site, entries: [] });
-    }
-  }
-  
-  await updateJobStatus(jobId, 'processing', {
-    current: 85,
-    total: 100,
-    step: 'creating-sync',
-    currentSite: ''
-  });
-  
-  const exportContent = createSyncContent(siteExports);
-  
-  const timestamp = new Date().toISOString().split('T')[0];
-  const fileName = `knowledge_sync_${timestamp}.txt`;
-  
-  return { fileName, exportContent };
-}
-
 async function loadEntriesForSite(site: Site): Promise<Entry[]> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -373,68 +329,6 @@ function createExportContent(siteExports: { site: Site; entries: Entry[] }[]): s
         lines.push(`Body: ${entry.body.substring(0, 500)}${entry.body.length > 500 ? '...' : ''}`);
       }
       
-      lines.push('');
-    }
-    
-    lines.push('');
-  }
-  
-  return lines.join('\n');
-}
-
-function createSyncContent(siteExports: { site: Site; entries: Entry[] }[]): string {
-  const lines: string[] = [];
-  
-  lines.push('Knowledge Sync Export');
-  lines.push('===================');
-  lines.push('');
-  lines.push(`Sync Date: ${new Date().toLocaleString()}`);
-  lines.push(`Total Sites: ${siteExports.length}`);
-  
-  const totalEntries = siteExports.reduce((sum, se) => sum + se.entries.length, 0);
-  const newEntries = siteExports.reduce((sum, se) => sum + se.entries.filter(e => !e.seen).length, 0);
-  
-  lines.push(`Total Entries: ${totalEntries}`);
-  lines.push(`New Entries: ${newEntries}`);
-  lines.push('');
-  
-  for (const { site, entries } of siteExports) {
-    const siteNewEntries = entries.filter(e => !e.seen);
-    
-    lines.push(`Site: ${site.name}`);
-    lines.push(`URL: ${site.url}`);
-    lines.push(`Total Entries: ${entries.length}`);
-    lines.push(`New Entries: ${siteNewEntries.length}`);
-    lines.push(''.padEnd(50, '-'));
-    lines.push('');
-    
-    if (siteNewEntries.length > 0) {
-      lines.push('NEW ENTRIES:');
-      lines.push('');
-      
-      // Sort new entries by published date (newest first)
-      const sortedNewEntries = siteNewEntries.sort((a, b) => 
-        new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime()
-      );
-      
-      for (const entry of sortedNewEntries) {
-        lines.push(`ID: ${entry.id}`);
-        lines.push(`Title: ${entry.title || 'No title'}`);
-        lines.push(`Type: ${entry.type || 'publication'}`);
-        lines.push(`Published: ${entry.published_date || 'Unknown date'}`);
-        
-        if (entry.abstract) {
-          lines.push(`Abstract: ${entry.abstract}`);
-        }
-        
-        if (entry.body) {
-          lines.push(`Body: ${entry.body.substring(0, 300)}${entry.body.length > 300 ? '...' : ''}`);
-        }
-        
-        lines.push('');
-      }
-    } else {
-      lines.push('No new entries for this site.');
       lines.push('');
     }
     

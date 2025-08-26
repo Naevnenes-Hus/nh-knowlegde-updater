@@ -32,7 +32,7 @@ export const useBackgroundExports = () => {
   };
 
   const startExport = async (
-    type: 'single_site' | 'all_sites' | 'sync',
+    type: 'single_site' | 'all_sites',
     sites: any[],
     siteId?: string
   ): Promise<string> => {
