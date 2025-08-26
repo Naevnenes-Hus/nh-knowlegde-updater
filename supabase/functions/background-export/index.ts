@@ -28,6 +28,9 @@ interface ExportJob {
   siteId?: string;
 }
 
+// Import JSZip for creating ZIP files
+import JSZip from "npm:jszip@3.10.1";
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, {
@@ -37,7 +40,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Force redeploy - updated timestamp
+    // Force redeploy - updated timestamp with ZIP support
     const job: ExportJob = await req.json();
     
     console.log(`Starting background export job: ${job.jobId} (${job.type})`);
@@ -52,7 +55,7 @@ Deno.serve(async (req: Request) => {
 
     // Process the export based on type
     let fileName: string;
-    let exportContent: string;
+    let zipBlob: Blob;
     
     switch (job.type) {
       case 'single_site':
@@ -63,22 +66,19 @@ Deno.serve(async (req: Request) => {
         if (!site) {
           throw new Error('Site not found');
         }
-        ({ fileName, exportContent } = await processSingleSiteExport(job.jobId, site));
+        ({ fileName, zipBlob } = await processSingleSiteExport(job.jobId, site));
         break;
         
       case 'all_sites':
-        ({ fileName, exportContent } = await processAllSitesExport(job.jobId, job.sites));
+        ({ fileName, zipBlob } = await processAllSitesExport(job.jobId, job.sites));
         break;
 
       default:
         throw new Error(`Unknown export type: ${job.type}`);
     }
 
-    // Create blob with proper content
-    const exportBlob = new Blob([exportContent], { type: 'text/plain; charset=utf-8' });
-    
-    // Upload to Supabase Storage
-    const downloadUrl = await uploadToStorage(fileName, exportBlob);
+    // Upload ZIP to Supabase Storage
+    const downloadUrl = await uploadToStorage(fileName, zipBlob);
     
     // Mark job as completed
     await updateJobStatus(job.jobId, 'completed', {
@@ -132,7 +132,7 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fileName: string; exportContent: string }> {
+async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing single site export for: ${site.name}`);
   
   await updateJobStatus(jobId, 'processing', {
@@ -149,30 +149,57 @@ async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fil
   await updateJobStatus(jobId, 'processing', {
     current: 60,
     total: 100,
-    step: 'creating-export',
+    step: 'creating-zip',
     currentSite: site.name
   });
   
-  // Create export content
-  const exportContent = createExportContent([{ site, entries }]);
+  // Create ZIP file
+  const zip = new JSZip();
+  const siteFolderName = sanitizeFileName(site.name);
+  const siteFolder = zip.folder(siteFolderName);
+  
+  if (siteFolder) {
+    // Sort entries by published date (newest first)
+    entries.sort((a, b) => new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime());
+    
+    // Add all entries to the site folder using GUID as filename
+    entries.forEach((entry) => {
+      const fileName = `${sanitizeFileName(entry.id)}.txt`;
+      const content = formatEntryContent(entry);
+      siteFolder.file(fileName, content);
+    });
+    
+    // Add site info file
+    const siteInfo = formatSiteInfo(site, entries.length);
+    siteFolder.file('_site_info.txt', siteInfo);
+  }
   
   await updateJobStatus(jobId, 'processing', {
     current: 90,
     total: 100,
-    step: 'finalizing',
+    step: 'generating-zip',
     currentSite: site.name
   });
   
-  const timestamp = new Date().toISOString().split('T')[0];
-  const fileName = `${sanitizeFileName(site.name)}_entries_${timestamp}.txt`;
+  // Generate ZIP blob
+  const zipBlob = await zip.generateAsync({ 
+    type: 'blob',
+    compression: 'STORE' // No compression for maximum compatibility
+  });
   
-  return { fileName, exportContent };
+  const timestamp = new Date().toISOString().split('T')[0];
+  const fileName = `${sanitizeFileName(site.name)}_entries_${timestamp}.zip`;
+  
+  console.log(`Generated ZIP file: ${fileName}, size: ${zipBlob.size} bytes`);
+  
+  return { fileName, zipBlob };
 }
 
-async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fileName: string; exportContent: string }> {
+async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing all sites export for ${sites.length} sites`);
   
-  const siteExports: { site: Site; entries: Entry[] }[] = [];
+  const zip = new JSZip();
+  let totalEntries = 0;
   
   for (let i = 0; i < sites.length; i++) {
     const site = sites[i];
@@ -187,27 +214,65 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
     try {
       const entries = await loadEntriesForSite(site);
       console.log(`Loaded ${entries.length} entries for ${site.name}`);
-      siteExports.push({ site, entries });
+      
+      if (entries.length > 0) {
+        // Create a folder for each site
+        const siteFolderName = sanitizeFileName(site.name);
+        const siteFolder = zip.folder(siteFolderName);
+        
+        if (siteFolder) {
+          // Sort entries by published date (newest first)
+          entries.sort((a, b) => new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime());
+          
+          // Add all entries to the site folder using GUID as filename
+          entries.forEach((entry) => {
+            const fileName = `${sanitizeFileName(entry.id)}.txt`;
+            const content = formatEntryContent(entry);
+            siteFolder.file(fileName, content);
+            totalEntries++;
+          });
+          
+          // Add site info file
+          const siteInfo = formatSiteInfo(site, entries.length);
+          siteFolder.file('_site_info.txt', siteInfo);
+        }
+      }
     } catch (error) {
       console.error(`Failed to load entries for ${site.name}:`, error);
       // Continue with other sites
-      siteExports.push({ site, entries: [] });
     }
   }
   
   await updateJobStatus(jobId, 'processing', {
     current: 85,
     total: 100,
-    step: 'creating-export',
+    step: 'creating-zip',
     currentSite: ''
   });
   
-  const exportContent = createExportContent(siteExports);
+  // Add summary file at root level
+  const summaryContent = formatSummary(sites, totalEntries);
+  zip.file('_export_summary.txt', summaryContent);
+  
+  await updateJobStatus(jobId, 'processing', {
+    current: 95,
+    total: 100,
+    step: 'generating-zip',
+    currentSite: ''
+  });
+  
+  // Generate ZIP blob
+  const zipBlob = await zip.generateAsync({ 
+    type: 'blob',
+    compression: 'STORE' // No compression for maximum compatibility
+  });
   
   const timestamp = new Date().toISOString().split('T')[0];
-  const fileName = `all_sites_export_${timestamp}.txt`;
+  const fileName = `all_sites_export_${timestamp}.zip`;
   
-  return { fileName, exportContent };
+  console.log(`Generated ZIP file: ${fileName}, size: ${zipBlob.size} bytes`);
+  
+  return { fileName, zipBlob };
 }
 
 async function loadEntriesForSite(site: Site): Promise<Entry[]> {
@@ -290,78 +355,96 @@ async function loadEntriesForSite(site: Site): Promise<Entry[]> {
   return allEntries;
 }
 
-function createExportContent(siteExports: { site: Site; entries: Entry[] }[]): string {
-  const lines: string[] = [];
+function formatEntryContent(entry: Entry): string {
+  // Extract values from entry and metadata
+  const metadata = entry.metadata || {};
   
-  lines.push('Knowledge Export');
-  lines.push('================');
-  lines.push('');
-  lines.push(`Export Date: ${new Date().toLocaleString()}`);
-  lines.push(`Total Sites: ${siteExports.length}`);
-  
-  const totalEntries = siteExports.reduce((sum, se) => sum + se.entries.length, 0);
-  lines.push(`Total Entries: ${totalEntries}`);
-  lines.push('');
-  
-  for (const { site, entries } of siteExports) {
-    lines.push(`Site: ${site.name}`);
-    lines.push(`URL: ${site.url}`);
-    lines.push(`Entries: ${entries.length}`);
-    lines.push(''.padEnd(50, '-'));
-    lines.push('');
-    
-    // Sort entries by published date (newest first)
-    const sortedEntries = entries.sort((a, b) => 
-      new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime()
-    );
-    
-    for (const entry of sortedEntries) {
-      lines.push(`ID: ${entry.id}`);
-      lines.push(`Title: ${entry.title || 'No title'}`);
-      lines.push(`Type: ${entry.type || 'publication'}`);
-      lines.push(`Published: ${entry.published_date || 'Unknown date'}`);
-      lines.push(`Seen: ${entry.seen ? 'Yes' : 'No'}`);
-      
-      if (entry.abstract) {
-        lines.push(`Abstract: ${entry.abstract}`);
-      }
-      
-      if (entry.body) {
-        lines.push(`Body: ${entry.body.substring(0, 500)}${entry.body.length > 500 ? '...' : ''}`);
-      }
-      
-      lines.push('');
-    }
-    
-    lines.push('');
-  }
-  
-  return lines.join('\n');
+  const content = [
+    `id: ${entry.id || ''}`,
+    `type: ${entry.type || ''}`,
+    `jnr: ${metadata.jnr || ''}`,
+    `title: ${entry.title || ''}`,
+    `published_date: ${entry.published_date || ''}`,
+    `date: ${metadata.date || entry.published_date || ''}`,
+    `is_board_ruling: ${metadata.is_board_ruling || ''}`,
+    `is_brought_to_court: ${metadata.is_brought_to_court || ''}`,
+    `authority: ${metadata.authority || ''}`,
+    `categories: ${Array.isArray(metadata.categories) ? metadata.categories.join(', ') : metadata.categories || ''}`,
+    `seen: ${entry.seen ? 'true' : 'false'}`,
+    `site_url: ${entry.site_url || ''}`,
+    `abstract: ${entry.abstract || ''}`,
+    `body: ${entry.body || ''}`
+  ].join('\n');
+
+  return content;
 }
 
-async function uploadToStorage(fileName: string, exportBlob: Blob): Promise<string> {
+function formatSiteInfo(site: Site, totalEntries: number): string {
+  return [
+    `Site Information`,
+    `================`,
+    ``,
+    `Name: ${site.name}`,
+    `URL: ${site.url}`,
+    `Total Entries: ${totalEntries}`,
+    ``,
+    `Export Date: ${new Date().toLocaleString()}`,
+    ``,
+    `File Structure:`,
+    `- All entries are in this folder (files named by GUID)`,
+    `- Each file contains the full entry data in structured format`
+  ].join('\n');
+}
+
+function formatSummary(sites: Site[], totalEntries: number): string {
+  const siteList = sites.map(site => `- ${site.name} (${site.url})`).join('\n');
+  
+  return [
+    `Knowledge Export Summary`,
+    `=======================`,
+    ``,
+    `Export Date: ${new Date().toLocaleString()}`,
+    `Total Sites: ${sites.length}`,
+    `Total Entries: ${totalEntries}`,
+    ``,
+    `Sites Included:`,
+    siteList,
+    ``,
+    `ZIP Structure:`,
+    `- Each site has its own folder named after the site`,
+    `- All entries for each site are in the site folder (files named by GUID)`,
+    `- Site information is in '_site_info.txt' in each site folder`,
+    `- This summary is in '_export_summary.txt' at the root`,
+    ``,
+    `File Naming:`,
+    `- All entry files are named using their GUID (e.g., 'abc123def456.txt')`,
+    `- Each file contains the full entry data in structured format`
+  ].join('\n');
+}
+
+async function uploadToStorage(fileName: string, zipBlob: Blob): Promise<string> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
-  console.log(`Uploading file: ${fileName}, size: ${exportBlob.size} bytes`);
+  console.log(`Uploading ZIP file: ${fileName}, size: ${zipBlob.size} bytes`);
   
   // Upload to storage bucket
   const uploadResponse = await fetch(`${supabaseUrl}/storage/v1/object/export-files/${fileName}`, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'text/plain; charset=utf-8',
+      'Content-Type': 'application/zip',
     },
-    body: exportBlob,
+    body: zipBlob,
   });
   
   if (!uploadResponse.ok) {
     const errorText = await uploadResponse.text();
     console.error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`, errorText);
-    throw new Error(`Failed to upload file: ${uploadResponse.statusText}`);
+    throw new Error(`Failed to upload ZIP file: ${uploadResponse.statusText}`);
   }
   
-  console.log(`File uploaded successfully: ${fileName}`);
+  console.log(`ZIP file uploaded successfully: ${fileName}`);
   
   // Generate signed URL for download (valid for 7 days)
   const signedUrlResponse = await fetch(`${supabaseUrl}/storage/v1/object/sign/export-files/${fileName}`, {
