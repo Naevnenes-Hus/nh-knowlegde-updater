@@ -95,6 +95,11 @@ export async function getActualEntryCountFromDatabase(siteUrl: string): Promise<
     console.log(`📊 Entry count from database: ${count} for ${new URL(siteUrl).hostname}`);
     return count;
   } catch (error) {
+    // Handle network errors gracefully
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      console.warn(`Network error getting entry count for ${new URL(siteUrl).hostname}, returning 0`);
+      return 0;
+    }
     console.error('Failed to get entry count from database:', error);
     throw error;
   }
@@ -110,6 +115,11 @@ export async function getUnseenEntryCountFromDatabase(siteUrl: string): Promise<
     console.log(`📊 Unseen entry count from database: ${count} for ${new URL(siteUrl).hostname}`);
     return count;
   } catch (error) {
+    // Handle network errors gracefully
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      console.warn(`Network error getting unseen entry count for ${new URL(siteUrl).hostname}, returning 0`);
+      return 0;
+    }
     console.error('Failed to get unseen entry count from database:', error);
     throw error;
   }
@@ -134,6 +144,11 @@ export async function getSitemapCountFromDatabase(siteUrl: string): Promise<numb
     
     return count;
   } catch (error) {
+    // Handle network errors gracefully
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      console.warn(`Network error getting sitemap count for ${new URL(siteUrl).hostname}, returning 0`);
+      return 0;
+    }
     console.error('Failed to get sitemap count from database:', error);
     throw error;
   }
