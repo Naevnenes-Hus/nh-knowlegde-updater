@@ -240,15 +240,6 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
               });
             }
           }
-            
-            if (dateFolderInSite) {
-              dateEntries.forEach((entry) => {
-                const fileName = `${sanitizeFileName(entry.id)}.txt`;
-                const content = formatEntryContent(entry);
-                dateFolderInSite.file(fileName, content);
-              });
-            }
-          }
           
           // Add site info file
           const siteInfo = formatSiteInfo(site, entries.length);
