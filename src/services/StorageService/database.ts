@@ -158,25 +158,13 @@ export async function loadEntriesFromDatabase(siteUrl: string, limit?: number, o
   }
 
   try {
-    // Use consistent shorter timeouts for all queries
-    const timeoutDuration = 25000; // 25 seconds for all queries
-    
-    const timeoutPromise = new Promise<Entry[]>((_, reject) => {
-      setTimeout(() => reject(new Error('Database query timeout')), timeoutDuration);
-    });
-    
-    const dbPromise = db.loadEntriesWithLimit(siteUrl, limit, offset);
-    const result = await Promise.race([dbPromise, timeoutPromise]);
+    const result = await db.loadEntriesWithLimit(siteUrl, limit, offset);
     
     if (result.length > 0) {
       console.log(`Database query completed: loaded ${result.length} entries (limit: ${limit || 'none'}, offset: ${offset || 0})`);
     }
     return result;
   } catch (error) {
-    if (error.message === 'Database query timeout') {
-      console.error(`Database timeout loading entries (limit: ${limit}, offset: ${offset}):`, error);
-      throw new Error(`Database query timeout after ${timeoutDuration/1000}s - dataset too large for single query`);
-    }
     console.error('Failed to load entries from database:', error);
     throw error;
   }
