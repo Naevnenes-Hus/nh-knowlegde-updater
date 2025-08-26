@@ -61,10 +61,7 @@ export class ExportService {
       // Increase timeout for ZIP generation - use compression level 1 for faster generation
       const blob = await zip.generateAsync({ 
         type: 'blob',
-        compression: 'DEFLATE',
-        compressionOptions: {
-          level: 1 // Faster compression
-        }
+        compression: 'STORE' // No compression for maximum compatibility
       });
       
       const timestamp = new Date().toISOString().split('T')[0];
@@ -251,7 +248,10 @@ export class ExportService {
       // Use faster compression for large ZIP files
       const blob = await zip.generateAsync({ 
         type: 'blob',
-        compression: 'STORE' // No compression for maximum compatibility
+        compression: 'DEFLATE',
+        compressionOptions: {
+          level: 1 // Faster compression, larger file size
+        }
       });
       
       const timestamp = new Date().toISOString().split('T')[0];
@@ -400,10 +400,7 @@ export class ExportService {
       // Increase timeout for ZIP generation - use compression level 1 for faster generation
       const blob = await zip.generateAsync({ 
         type: 'blob',
-        compression: 'DEFLATE',
-        compressionOptions: {
-          level: 1 // Faster compression
-        }
+        compression: 'STORE' // No compression for maximum compatibility
       });
       
       const timestamp = new Date().toISOString().split('T')[0];
