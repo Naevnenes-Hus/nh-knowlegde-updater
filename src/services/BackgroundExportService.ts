@@ -278,7 +278,18 @@ export class BackgroundExportService {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to trigger background processing: ${response.statusText}`);
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (parseError) {
+          // Use the original error message if we can't parse the response
+        }
+        throw new Error(`Failed to trigger background processing: ${errorMessage}`);
       }
 
       console.log(`Background export job ${jobId} triggered successfully`);
