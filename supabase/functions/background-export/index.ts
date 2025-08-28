@@ -188,10 +188,32 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
     
     // Process this chunk
     entries.forEach((entry) => {
-      const fileName = `${sanitizeFileName(entry.id)}.txt`;
-      const content = formatEntryContent(entry);
-      siteFolder.file(fileName, content);
-      totalProcessed++;
+      // Get publication date for folder organization
+      const dateFolder = getDateFolder(entry.published_date);
+      
+      // Create or get the date folder within the site folder
+      let dateFolderInSite = siteFolder.folder(dateFolder);
+      if (!dateFolderInSite) {
+        dateFolderInSite = siteFolder.folder(dateFolder);
+      }
+      
+      if (dateFolderInSite) {
+        // Get publication date for folder organization
+        const dateFolder = getDateFolder(entry.published_date);
+        
+        // Create or get the date folder within the site folder
+        let dateFolderInSite = siteFolder.folder(dateFolder);
+        if (!dateFolderInSite) {
+          dateFolderInSite = siteFolder.folder(dateFolder);
+        }
+        
+        if (dateFolderInSite) {
+          const fileName = `${sanitizeFileName(entry.id)}.txt`;
+          const content = formatEntryContent(entry);
+          dateFolderInSite.file(fileName, content);
+          siteEntryCount++;
+          totalEntries++;
+        }
     });
     
     console.log(`Processed chunk: ${entries.length} entries (total: ${totalProcessed})`);
@@ -619,4 +641,23 @@ function sanitizeFileName(fileName: string): string {
     .replace(/[<>:"/\\|?*]/g, '_')
     .replace(/\s+/g, '_')
     .substring(0, 100);
+}
+
+function getDateFolder(publishedDate: string): string {
+  if (!publishedDate) {
+    return 'unknown-date';
+  }
+  
+  try {
+    const date = new Date(publishedDate);
+    if (isNaN(date.getTime())) {
+      return 'unknown-date';
+    }
+    
+    // Format as YYYY-MM-DD for folder name
+    return date.toISOString().split('T')[0];
+  } catch (error) {
+    console.warn(`Invalid date format: ${publishedDate}`);
+    return 'unknown-date';
+  }
 }
