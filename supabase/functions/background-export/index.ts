@@ -172,7 +172,7 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
   
   // Load and process entries in small chunks to avoid memory issues
   let totalProcessed = 0;
-  const chunkSize = 5; // Very small chunks to minimize CPU usage per iteration
+  const chunkSize = 10; // Small chunks to minimize CPU usage per iteration
   let offset = 0;
   let hasMore = true;
   
@@ -209,8 +209,8 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
     
     // Update progress
     await updateJobStatus(jobId, 'processing', {
-      current: Math.min(60 + (totalProcessed / 100), 85),
-      total: 100,
+      current: totalProcessed,
+      total: totalProcessed + (entries.length === chunkSize ? chunkSize : 0), // Estimate remaining
       step: 'creating-zip',
       currentSite: site.name
     });
@@ -231,8 +231,8 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
   siteFolder.file('_site_info.txt', siteInfo);
   
   await updateJobStatus(jobId, 'processing', {
-    current: 90,
-    total: 100,
+    current: totalProcessed,
+    total: totalProcessed,
     step: 'generating-zip',
     currentSite: site.name
   });
@@ -262,8 +262,8 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
     const site = sites[i];
     
     await updateJobStatus(jobId, 'processing', {
-      current: Math.round((i / sites.length) * 80),
-      total: 100,
+      current: i,
+      total: sites.length,
       step: 'loading-entries',
       currentSite: site.name
     });
@@ -280,7 +280,7 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
       
       // Load entries in small chunks for this site
       let siteEntryCount = 0;
-      const chunkSize = 5; // Very small chunks to minimize CPU usage per iteration
+      const chunkSize = 10; // Small chunks to minimize CPU usage per iteration
       let offset = 0;
       let hasMore = true;
       
@@ -332,8 +332,8 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
   }
   
   await updateJobStatus(jobId, 'processing', {
-    current: 85,
-    total: 100,
+    current: sites.length,
+    total: sites.length,
     step: 'creating-summary',
     currentSite: ''
   });
@@ -343,8 +343,8 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
   zip.file('_export_summary.txt', summaryContent);
   
   await updateJobStatus(jobId, 'processing', {
-    current: 95,
-    total: 100,
+    current: totalEntries,
+    total: totalEntries,
     step: 'generating-zip',
     currentSite: ''
   });
