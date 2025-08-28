@@ -370,27 +370,7 @@ async function loadEntriesChunk(site: Site, limit: number, offset: number): Prom
   
   // Determine table names based on environment
   const environment = Deno.env.get('VITE_ENVIRONMENT') || 'development';
-  const sitesTable = environment === 'development' ? 'dev_sites' : 'sites';
   const entriesTable = environment === 'development' ? 'dev_entries' : 'entries';
-  
-  // Get site ID from database
-  const siteResponse = await fetch(`${supabaseUrl}/rest/v1/${sitesTable}?url=eq.${encodeURIComponent(site.url)}&select=id`, {
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'apikey': supabaseServiceKey,
-    },
-  });
-  
-  if (!siteResponse.ok) {
-    throw new Error(`Failed to fetch site: ${siteResponse.statusText}`);
-  }
-  
-  const siteData = await siteResponse.json();
-  if (!siteData || siteData.length === 0) {
-    return [];
-  }
-  
-  const siteId = siteData[0].id;
   
   // Load entries chunk with timeout
   const controller = new AbortController();
@@ -398,7 +378,7 @@ async function loadEntriesChunk(site: Site, limit: number, offset: number): Prom
   
   try {
     const entriesResponse = await fetch(
-      `${supabaseUrl}/rest/v1/${entriesTable}?site_id=eq.${siteId}&order=published_date.desc&limit=${limit}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/${entriesTable}?site_id=eq.${site.id}&order=published_date.desc&limit=${limit}&offset=${offset}`,
       {
         headers: {
           'Authorization': `Bearer ${supabaseServiceKey}`,
