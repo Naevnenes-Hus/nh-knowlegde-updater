@@ -178,24 +178,25 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
   console.log('Starting processSiteStreaming for:', site.name);
   
   const entriesTableName = getEntriesTableName();
-  let allFolders: string[] = [];
   let offset = 0;
-  const chunkSize = 50; // Larger chunks for better performance
-  const itemsPerFolder = 500; // 500 items per page/folder
+  const chunkSize = 200; // Larger chunks for better performance
+  const itemsPerFolder = 1000; // 1000 items per page/folder
   let hasMore = true;
   let processed = 0;
-  let currentFolderEntries: string[] = [];
   let currentFolderNumber = 1;
+  let siteContent = '';
 
   console.log('Starting entry processing loop');
   
   while (hasMore) {
-    console.log(`Loading entries chunk: offset=${offset}, chunkSize=${chunkSize}`);
+    if (processed % 5000 === 0) {
+      console.log(`Loading entries chunk: offset=${offset}, processed=${processed}`);
+    }
     
     // Get small chunk of entries
     const { data: entries, error } = await supabase
       .from(entriesTableName)
-      .select('title, abstract, body, published_date, type')
+      .select('id, title, abstract, body, published_date, type')
       .eq('site_id', site.id)
       .range(offset, offset + chunkSize - 1)
       .order('published_date', { ascending: true }); // Oldest first for proper paging
@@ -205,35 +206,37 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
       throw new Error(`Database error: ${error.message}`);
     }
 
-    console.log(`Loaded ${entries?.length || 0} entries`);
+    if (processed % 5000 === 0) {
+      console.log(`Loaded ${entries?.length || 0} entries`);
+    }
     
     if (!entries || entries.length === 0) {
-      console.log('No more entries, stopping');
       hasMore = false;
       break;
     }
 
-    // Process entries immediately to avoid memory buildup
+    let currentFolderEntries = '';
+    let entriesInCurrentFolder = 0;
+    
     for (const entry of entries) {
       const entryText = formatEntry(entry);
-      currentFolderEntries.push(entryText);
+      currentFolderEntries += entryText + '\n\n---\n\n';
+      entriesInCurrentFolder++;
       processed++;
 
       // When we reach 500 items, create a folder and reset
-      if (currentFolderEntries.length >= itemsPerFolder) {
-        console.log(`Creating folder ${currentFolderNumber} with ${currentFolderEntries.length} entries`);
+      if (entriesInCurrentFolder >= itemsPerFolder) {
         const folderName = `page_${currentFolderNumber.toString().padStart(3, '0')}`;
-        const folderContent = `FOLDER: ${folderName}\nITEMS: ${currentFolderEntries.length}\n\n` + 
-                             currentFolderEntries.join('\n\n---\n\n');
-        allFolders.push(folderContent);
+        const folderContent = `FOLDER: ${folderName}\nITEMS: ${entriesInCurrentFolder}\n\n${currentFolderEntries}`;
+        siteContent += folderContent + '\n\n' + '='.repeat(50) + '\n\n';
         
-        currentFolderEntries = [];
+        currentFolderEntries = '';
+        entriesInCurrentFolder = 0;
         currentFolderNumber++;
       }
 
-      // Update progress every 50 entries
-      if (processed % 50 === 0) {
-        console.log(`Progress update: ${processed} entries processed`);
+      // Update progress every 1000 entries
+      if (processed % 1000 === 0) {
         await updateJobStatus(supabase, jobId, 'processing', {
           current: processed,
           total: 0,
@@ -243,29 +246,26 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
       }
     }
 
+    // Handle remaining entries in current folder after processing chunk
+    if (entriesInCurrentFolder > 0 && !hasMore) {
+      const folderName = `page_${currentFolderNumber.toString().padStart(3, '0')}`;
+      const folderContent = `FOLDER: ${folderName}\nITEMS: ${entriesInCurrentFolder}\n\n${currentFolderEntries}`;
+      siteContent += folderContent + '\n\n' + '='.repeat(50) + '\n\n';
+    }
+
     offset += chunkSize;
     
     // If we got fewer entries than requested, we're done
     if (entries.length < chunkSize) {
-      console.log('Got fewer entries than requested, finishing');
       hasMore = false;
     }
   }
 
-  // Handle remaining entries in the last folder
-  if (currentFolderEntries.length > 0) {
-    console.log(`Creating final folder ${currentFolderNumber} with ${currentFolderEntries.length} entries`);
-    const folderName = `page_${currentFolderNumber.toString().padStart(3, '0')}`;
-    const folderContent = `FOLDER: ${folderName}\nITEMS: ${currentFolderEntries.length}\n\n` + 
-                         currentFolderEntries.join('\n\n---\n\n');
-    allFolders.push(folderContent);
-  }
-
-  console.log(`Site processing completed: ${processed} entries, ${allFolders.length} folders`);
+  console.log(`Site processing completed: ${processed} entries`);
   
   // Format site section
   const siteHeader = `SITE: ${site.name}\nURL: ${site.url}\nENTRIES: ${processed}\n\n`;
-  return siteHeader + allFolders.join('\n\n' + '='.repeat(50) + '\n\n');
+  return siteHeader + siteContent;
 }
 
 function formatEntry(entry: any): string {
