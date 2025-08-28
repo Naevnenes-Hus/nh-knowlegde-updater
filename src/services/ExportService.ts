@@ -494,6 +494,10 @@ export class ExportService {
       // If no entries, return empty array immediately
       if (totalCount === 0) {
         console.log(`No entries found for ${siteName}`);
+        onProgress?.({
+          loaded: 0,
+          total: 0
+        });
         return [];
       }
     } catch (error) {

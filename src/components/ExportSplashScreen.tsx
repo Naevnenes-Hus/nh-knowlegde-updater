@@ -115,13 +115,37 @@ const ExportSplashScreen: React.FC<ExportSplashScreenProps> = ({ isVisible, prog
               {progress.sitesProcessed} / {progress.totalSites}
             </span>
           </div>
+          {progress.step === 'loading-entries' && progress.currentSite && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Database progress:</span>
+              <span className="font-medium text-gray-900">
+                {progress.entriesProcessed.toLocaleString()} / {progress.totalEntries.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {progress.step === 'loading-entries' && progress.currentSite && progress.totalEntries > 0 && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>Loading from database</span>
+                <span>{Math.round((progress.entriesProcessed / progress.totalEntries) * 100)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+                  style={{
+                    width: `${Math.min((progress.entriesProcessed / progress.totalEntries) * 100, 100)}%`
+                  }}
+                />
+              </div>
+            </div>
+          )}
           <div className="flex justify-between text-sm">
             <span className="text-gray-600">Total entries:</span>
             <span className="font-medium text-gray-900">
               {progress.totalEntries.toLocaleString()}
             </span>
           </div>
-          {progress.entriesProcessed > 0 && (
+          {progress.entriesProcessed > 0 && progress.step !== 'loading-entries' && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-600">Entries processed:</span>
               <span className="font-medium text-gray-900">
