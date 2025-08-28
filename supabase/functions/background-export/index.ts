@@ -154,9 +154,13 @@ Deno.serve(async (req: Request) => {
 async function processSingleSiteExportStreaming(jobId: string, site: Site): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing single site export for: ${site.name}`);
   
+  // First, get the actual total count of entries for this site
+  const actualTotal = await getEntryCount(site);
+  console.log(`Site ${site.name} has ${actualTotal} total entries`);
+  
   await updateJobStatus(jobId, 'processing', {
     current: 10,
-    total: 100,
+    total: actualTotal,
     step: 'loading-entries',
     currentSite: site.name
   });
@@ -210,7 +214,7 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
     // Update progress
     await updateJobStatus(jobId, 'processing', {
       current: totalProcessed,
-      total: totalProcessed + (entries.length === chunkSize ? chunkSize : 0), // Estimate remaining
+      total: actualTotal,
       step: 'creating-zip',
       currentSite: site.name
     });
@@ -232,7 +236,7 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
   
   await updateJobStatus(jobId, 'processing', {
     current: totalProcessed,
-    total: totalProcessed,
+    total: actualTotal,
     step: 'generating-zip',
     currentSite: site.name
   });
@@ -252,6 +256,45 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
   return { fileName, zipBlob };
 }
 
+async function getEntryCount(site: Site): Promise<number> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  
+  // Determine table names based on environment
+  const environment = Deno.env.get('VITE_ENVIRONMENT') || 'development';
+  const entriesTable = environment === 'development' ? 'dev_entries' : 'entries';
+  
+  try {
+    const countResponse = await fetch(
+      `${supabaseUrl}/rest/v1/${entriesTable}?site_id=eq.${site.id}&select=count`,
+      {
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'apikey': supabaseServiceKey,
+          'Prefer': 'count=exact'
+        },
+      }
+    );
+    
+    if (!countResponse.ok) {
+      console.warn(`Failed to get entry count, using fallback: ${countResponse.statusText}`);
+      return 1000; // Fallback estimate
+    }
+    
+    const countHeader = countResponse.headers.get('content-range');
+    if (countHeader) {
+      const match = countHeader.match(/\/(\d+)$/);
+      if (match) {
+        return parseInt(match[1], 10);
+      }
+    }
+    
+    return 1000; // Fallback estimate
+  } catch (error) {
+    console.warn('Error getting entry count:', error);
+    return 1000; // Fallback estimate
+  }
+}
 async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing all sites export for ${sites.length} sites`);
   
