@@ -136,11 +136,14 @@ Deno.serve(async (req) => {
 
 async function processSiteStreaming(supabase: any, site: Site, jobId: string): Promise<string> {
   const entriesTableName = getEntriesTableName();
-  let allEntries: string[] = [];
+  let allFolders: string[] = [];
   let offset = 0;
-  const chunkSize = 20; // Small chunks to avoid memory issues
+  const chunkSize = 50; // Larger chunks for better performance
+  const itemsPerFolder = 500; // 500 items per page/folder
   let hasMore = true;
   let processed = 0;
+  let currentFolderEntries: string[] = [];
+  let currentFolderNumber = 1;
 
   while (hasMore) {
     // Get small chunk of entries
@@ -149,7 +152,7 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
       .select('title, abstract, body, published_date, type')
       .eq('site_id', site.id)
       .range(offset, offset + chunkSize - 1)
-      .order('published_date', { ascending: false });
+      .order('published_date', { ascending: true }); // Oldest first for proper paging
 
     if (error) {
       throw new Error(`Database error: ${error.message}`);
@@ -163,8 +166,19 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
     // Process entries immediately to avoid memory buildup
     for (const entry of entries) {
       const entryText = formatEntry(entry);
-      allEntries.push(entryText);
+      currentFolderEntries.push(entryText);
       processed++;
+
+      // When we reach 500 items, create a folder and reset
+      if (currentFolderEntries.length >= itemsPerFolder) {
+        const folderName = `page_${currentFolderNumber.toString().padStart(3, '0')}`;
+        const folderContent = `FOLDER: ${folderName}\nITEMS: ${currentFolderEntries.length}\n\n` + 
+                             currentFolderEntries.join('\n\n---\n\n');
+        allFolders.push(folderContent);
+        
+        currentFolderEntries = [];
+        currentFolderNumber++;
+      }
 
       // Update progress every 50 entries
       if (processed % 50 === 0) {
@@ -185,9 +199,17 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
     }
   }
 
+  // Handle remaining entries in the last folder
+  if (currentFolderEntries.length > 0) {
+    const folderName = `page_${currentFolderNumber.toString().padStart(3, '0')}`;
+    const folderContent = `FOLDER: ${folderName}\nITEMS: ${currentFolderEntries.length}\n\n` + 
+                         currentFolderEntries.join('\n\n---\n\n');
+    allFolders.push(folderContent);
+  }
+
   // Format site section
   const siteHeader = `SITE: ${site.name}\nURL: ${site.url}\nENTRIES: ${allEntries.length}\n\n`;
-  return siteHeader + allEntries.join('\n\n---\n\n');
+  return siteHeader + allFolders.join('\n\n' + '='.repeat(50) + '\n\n');
 }
 
 function formatEntry(entry: any): string {
