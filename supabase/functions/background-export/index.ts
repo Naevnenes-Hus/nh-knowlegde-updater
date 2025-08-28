@@ -23,12 +23,21 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  let jobId: string;
+  let type: 'single_site' | 'all_sites';
+  let sites: Site[];
+  let siteId: string | undefined;
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { jobId, type, sites, siteId }: JobRequest = await req.json();
+    const requestBody: JobRequest = await req.json();
+    jobId = requestBody.jobId;
+    type = requestBody.type;
+    sites = requestBody.sites;
+    siteId = requestBody.siteId;
 
     // Update job status to processing
     await updateJobStatus(supabase, jobId, 'processing', {
@@ -109,7 +118,6 @@ Deno.serve(async (req) => {
       const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const supabase = createClient(supabaseUrl, supabaseServiceKey);
       
-      const { jobId } = await req.json();
       const tableName = getTableName();
       
       await supabase
@@ -208,7 +216,7 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
   }
 
   // Format site section
-  const siteHeader = `SITE: ${site.name}\nURL: ${site.url}\nENTRIES: ${allEntries.length}\n\n`;
+  const siteHeader = `SITE: ${site.name}\nURL: ${site.url}\nENTRIES: ${processed}\n\n`;
   return siteHeader + allFolders.join('\n\n' + '='.repeat(50) + '\n\n');
 }
 
