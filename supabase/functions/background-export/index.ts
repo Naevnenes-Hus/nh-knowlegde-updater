@@ -178,24 +178,28 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
   console.log('Starting processSiteStreaming for:', site.name);
   
   const entriesTableName = getEntriesTableName();
-  let allFolders: string[] = [];
   let offset = 0;
-  const chunkSize = 50; // Larger chunks for better performance
-  const itemsPerFolder = 500; // 500 items per page/folder
+  const chunkSize = 100; // Larger chunks for better performance
+  const itemsPerFolder = 1000; // 1000 items per page/folder for fewer folders
   let hasMore = true;
   let processed = 0;
-  let currentFolderEntries: string[] = [];
+  let currentFolderContent = '';
+  let currentFolderCount = 0;
   let currentFolderNumber = 1;
+  let siteContent = '';
 
   console.log('Starting entry processing loop');
   
   while (hasMore) {
-    console.log(`Loading entries chunk: offset=${offset}, chunkSize=${chunkSize}`);
+    // Only log every 10th chunk to reduce CPU overhead
+    if (offset % (chunkSize * 10) === 0) {
+      console.log(`Loading entries chunk: offset=${offset}`);
+    }
     
     // Get small chunk of entries
     const { data: entries, error } = await supabase
       .from(entriesTableName)
-      .select('title, abstract, body, published_date, type')
+      .select('id, title, published_date') // Only essential fields to reduce memory
       .eq('site_id', site.id)
       .range(offset, offset + chunkSize - 1)
       .order('published_date', { ascending: true }); // Oldest first for proper paging
@@ -205,35 +209,33 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
       throw new Error(`Database error: ${error.message}`);
     }
 
-    console.log(`Loaded ${entries?.length || 0} entries`);
-    
     if (!entries || entries.length === 0) {
-      console.log('No more entries, stopping');
       hasMore = false;
       break;
     }
 
-    // Process entries immediately to avoid memory buildup
+    // Process entries immediately with minimal memory usage
     for (const entry of entries) {
-      const entryText = formatEntry(entry);
-      currentFolderEntries.push(entryText);
+      // Format entry inline to avoid storing in memory
+      const entryText = `${entry.id}\t${entry.title || ''}\t${entry.published_date || ''}\n`;
+      currentFolderContent += entryText;
+      currentFolderCount++;
       processed++;
 
-      // When we reach 500 items, create a folder and reset
-      if (currentFolderEntries.length >= itemsPerFolder) {
-        console.log(`Creating folder ${currentFolderNumber} with ${currentFolderEntries.length} entries`);
+      // When we reach itemsPerFolder items, finalize folder and reset
+      if (currentFolderCount >= itemsPerFolder) {
         const folderName = `page_${currentFolderNumber.toString().padStart(3, '0')}`;
-        const folderContent = `FOLDER: ${folderName}\nITEMS: ${currentFolderEntries.length}\n\n` + 
-                             currentFolderEntries.join('\n\n---\n\n');
-        allFolders.push(folderContent);
+        const folderHeader = `FOLDER: ${folderName}\nITEMS: ${currentFolderCount}\n\n`;
+        siteContent += folderHeader + currentFolderContent + '\n' + '='.repeat(50) + '\n\n';
         
-        currentFolderEntries = [];
+        // Reset for next folder
+        currentFolderContent = '';
+        currentFolderCount = 0;
         currentFolderNumber++;
       }
 
-      // Update progress every 50 entries
-      if (processed % 50 === 0) {
-        console.log(`Progress update: ${processed} entries processed`);
+      // Update progress every 1000 entries to reduce CPU overhead
+      if (processed % 1000 === 0) {
         await updateJobStatus(supabase, jobId, 'processing', {
           current: processed,
           total: 0,
@@ -247,41 +249,25 @@ async function processSiteStreaming(supabase: any, site: Site, jobId: string): P
     
     // If we got fewer entries than requested, we're done
     if (entries.length < chunkSize) {
-      console.log('Got fewer entries than requested, finishing');
       hasMore = false;
     }
   }
 
   // Handle remaining entries in the last folder
-  if (currentFolderEntries.length > 0) {
-    console.log(`Creating final folder ${currentFolderNumber} with ${currentFolderEntries.length} entries`);
+  if (currentFolderCount > 0) {
     const folderName = `page_${currentFolderNumber.toString().padStart(3, '0')}`;
-    const folderContent = `FOLDER: ${folderName}\nITEMS: ${currentFolderEntries.length}\n\n` + 
-                         currentFolderEntries.join('\n\n---\n\n');
-    allFolders.push(folderContent);
+    const folderHeader = `FOLDER: ${folderName}\nITEMS: ${currentFolderCount}\n\n`;
+    siteContent += folderHeader + currentFolderContent + '\n' + '='.repeat(50) + '\n\n';
   }
 
-  console.log(`Site processing completed: ${processed} entries, ${allFolders.length} folders`);
+  console.log(`Site processing completed: ${processed} entries, ${currentFolderNumber} folders`);
   
   // Format site section
-  const siteHeader = `SITE: ${site.name}\nURL: ${site.url}\nENTRIES: ${processed}\n\n`;
-  return siteHeader + allFolders.join('\n\n' + '='.repeat(50) + '\n\n');
-}
-
-function formatEntry(entry: any): string {
-  const parts = [];
-  
-  if (entry.title) parts.push(`TITLE: ${entry.title}`);
-  if (entry.published_date) parts.push(`DATE: ${entry.published_date}`);
-  if (entry.type) parts.push(`TYPE: ${entry.type}`);
-  if (entry.abstract) parts.push(`ABSTRACT: ${entry.abstract}`);
-  if (entry.body) parts.push(`CONTENT: ${entry.body}`);
-  
-  return parts.join('\n');
+  const siteHeader = `SITE: ${site.name}\nURL: ${site.url}\nENTRIES: ${processed}\nFOLDERS: ${currentFolderNumber}\n\n`;
+  return siteHeader + siteContent;
 }
 
 async function updateJobStatus(supabase: any, jobId: string, status: string, progress: any) {
-  console.log(`Updating job status: ${status}, progress: ${progress.current}/${progress.total}`);
   const tableName = getTableName();
   const { error } = await supabase
     .from(tableName)
@@ -290,8 +276,6 @@ async function updateJobStatus(supabase: any, jobId: string, status: string, pro
   
   if (error) {
     console.error('Failed to update job status:', error);
-  } else {
-    console.log('Job status updated successfully');
   }
 }
 
