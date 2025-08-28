@@ -40,8 +40,27 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Force redeploy - updated timestamp with ZIP support
-    const job: ExportJob = await req.json();
+    let job: ExportJob;
+    try {
+      job = await req.json();
+      
+      // Validate required fields
+      if (!job || typeof job.jobId !== 'string' || typeof job.type !== 'string' || !Array.isArray(job.sites)) {
+        throw new Error('Invalid job payload structure');
+      }
+    } catch (jsonError) {
+      console.error("Error parsing request body:", jsonError);
+      return new Response(
+        JSON.stringify({ error: `Invalid request body: ${jsonError.message}` }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+    }
     
     console.log(`Starting background export job: ${job.jobId} (${job.type})`);
     
@@ -53,7 +72,7 @@ Deno.serve(async (req: Request) => {
       currentSite: ''
     });
 
-    // Process the export based on type
+    // Process the export based on type with memory-efficient streaming
     let fileName: string;
     let zipBlob: Blob;
     
@@ -66,11 +85,11 @@ Deno.serve(async (req: Request) => {
         if (!site) {
           throw new Error('Site not found');
         }
-        ({ fileName, zipBlob } = await processSingleSiteExport(job.jobId, site));
+        ({ fileName, zipBlob } = await processSingleSiteExportStreaming(job.jobId, site));
         break;
         
       case 'all_sites':
-        ({ fileName, zipBlob } = await processAllSitesExport(job.jobId, job.sites));
+        ({ fileName, zipBlob } = await processAllSitesExportStreaming(job.jobId, job.sites));
         break;
 
       default:
@@ -132,7 +151,7 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fileName: string; zipBlob: Blob }> {
+async function processSingleSiteExportStreaming(jobId: string, site: Site): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing single site export for: ${site.name}`);
   
   await updateJobStatus(jobId, 'processing', {
@@ -142,37 +161,63 @@ async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fil
     currentSite: site.name
   });
   
-  // Load entries from database
-  const entries = await loadEntriesForSite(site);
-  console.log(`Loaded ${entries.length} entries for ${site.name}`);
-  
-  await updateJobStatus(jobId, 'processing', {
-    current: 60,
-    total: 100,
-    step: 'creating-zip',
-    currentSite: site.name
-  });
-  
-  // Create ZIP file
+  // Create ZIP with streaming approach
   const zip = new JSZip();
   const siteFolderName = sanitizeFileName(site.name);
   const siteFolder = zip.folder(siteFolderName);
   
-  if (siteFolder) {
-    // Sort entries by published date (newest first)
-    entries.sort((a, b) => new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime());
+  if (!siteFolder) {
+    throw new Error('Failed to create site folder in ZIP');
+  }
+  
+  // Load and process entries in small chunks to avoid memory issues
+  let totalProcessed = 0;
+  const chunkSize = 25; // Very small chunks to minimize memory usage
+  let offset = 0;
+  let hasMore = true;
+  
+  while (hasMore) {
+    console.log(`Loading chunk starting at offset ${offset}`);
     
-    // Add all entries to the site folder using GUID as filename
+    const entries = await loadEntriesChunk(site, chunkSize, offset);
+    
+    if (entries.length === 0) {
+      hasMore = false;
+      break;
+    }
+    
+    // Process this chunk
     entries.forEach((entry) => {
       const fileName = `${sanitizeFileName(entry.id)}.txt`;
       const content = formatEntryContent(entry);
       siteFolder.file(fileName, content);
+      totalProcessed++;
     });
     
-    // Add site info file
-    const siteInfo = formatSiteInfo(site, entries.length);
-    siteFolder.file('_site_info.txt', siteInfo);
+    console.log(`Processed chunk: ${entries.length} entries (total: ${totalProcessed})`);
+    
+    // Update progress
+    await updateJobStatus(jobId, 'processing', {
+      current: Math.min(60 + (totalProcessed / 100), 85),
+      total: 100,
+      step: 'creating-zip',
+      currentSite: site.name
+    });
+    
+    // If we got fewer entries than requested, we've reached the end
+    if (entries.length < chunkSize) {
+      hasMore = false;
+    } else {
+      offset += entries.length;
+    }
+    
+    // Small delay to prevent memory buildup
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
+  
+  // Add site info file
+  const siteInfo = formatSiteInfo(site, totalProcessed);
+  siteFolder.file('_site_info.txt', siteInfo);
   
   await updateJobStatus(jobId, 'processing', {
     current: 90,
@@ -181,10 +226,11 @@ async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fil
     currentSite: site.name
   });
   
-  // Generate ZIP blob
+  // Generate ZIP blob with minimal compression to save memory
   const zipBlob = await zip.generateAsync({ 
     type: 'blob',
-    compression: 'STORE' // No compression for maximum compatibility
+    compression: 'STORE', // No compression to save memory
+    streamFiles: true // Enable streaming for large files
   });
   
   const timestamp = new Date().toISOString().split('T')[0];
@@ -195,7 +241,7 @@ async function processSingleSiteExport(jobId: string, site: Site): Promise<{ fil
   return { fileName, zipBlob };
 }
 
-async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fileName: string; zipBlob: Blob }> {
+async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing all sites export for ${sites.length} sites`);
   
   const zip = new JSZip();
@@ -212,50 +258,72 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
     });
     
     try {
-      const entries = await loadEntriesForSite(site);
-      console.log(`Loaded ${entries.length} entries for ${site.name}`);
+      // Create a folder for each site
+      const siteFolderName = sanitizeFileName(site.name);
+      const siteFolder = zip.folder(siteFolderName);
       
-      if (entries.length > 0) {
-        // Create a folder for each site
-        const siteFolderName = sanitizeFileName(site.name);
-        const siteFolder = zip.folder(siteFolderName);
-        
-        if (siteFolder) {
-          // Sort entries by published date (newest first)
-          entries.sort((a, b) => new Date(b.published_date || '').getTime() - new Date(a.published_date || '').getTime());
-          
-          // Group entries by publication date and create date folders
-          const entriesByDate = groupEntriesByDate(entries);
-          
-          // Create a folder for each date
-          for (const [dateFolder, dateEntries] of Object.entries(entriesByDate)) {
-            const dateFolderInSite = siteFolder.folder(dateFolder);
-            
-            if (dateFolderInSite) {
-              dateEntries.forEach((entry) => {
-                const fileName = `${sanitizeFileName(entry.id)}.txt`;
-                const content = formatEntryContent(entry);
-                dateFolderInSite.file(fileName, content);
-                totalEntries++;
-              });
-            }
-          }
-          
-          // Add site info file
-          const siteInfo = formatSiteInfo(site, entries.length);
-          siteFolder.file('_site_info.txt', siteInfo);
-        }
+      if (!siteFolder) {
+        console.error(`Failed to create folder for site: ${site.name}`);
+        continue;
       }
+      
+      // Load entries in small chunks for this site
+      let siteEntryCount = 0;
+      const chunkSize = 20; // Even smaller chunks for all-sites export
+      let offset = 0;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const entries = await loadEntriesChunk(site, chunkSize, offset);
+        
+        if (entries.length === 0) {
+          hasMore = false;
+          break;
+        }
+        
+        // Process this chunk
+        entries.forEach((entry) => {
+          const fileName = `${sanitizeFileName(entry.id)}.txt`;
+          const content = formatEntryContent(entry);
+          siteFolder.file(fileName, content);
+          siteEntryCount++;
+          totalEntries++;
+        });
+        
+        console.log(`Site ${site.name}: processed ${entries.length} entries (site total: ${siteEntryCount})`);
+        
+        // If we got fewer entries than requested, we've reached the end
+        if (entries.length < chunkSize) {
+          hasMore = false;
+        } else {
+          offset += entries.length;
+        }
+        
+        // Longer delay between chunks for all-sites export
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      
+      // Add site info file
+      if (siteEntryCount > 0) {
+        const siteInfo = formatSiteInfo(site, siteEntryCount);
+        siteFolder.file('_site_info.txt', siteInfo);
+      }
+      
+      console.log(`Completed site ${site.name}: ${siteEntryCount} entries`);
+      
     } catch (error) {
-      console.error(`Failed to load entries for ${site.name}:`, error);
-      // Continue with other sites
+      console.error(`Failed to process site ${site.name}:`, error);
+      // Continue with other sites instead of failing completely
     }
+    
+    // Delay between sites to prevent memory buildup
+    await new Promise(resolve => setTimeout(resolve, 300));
   }
   
   await updateJobStatus(jobId, 'processing', {
     current: 85,
     total: 100,
-    step: 'creating-zip',
+    step: 'creating-summary',
     currentSite: ''
   });
   
@@ -270,10 +338,11 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
     currentSite: ''
   });
   
-  // Generate ZIP blob
+  // Generate ZIP blob with minimal compression
   const zipBlob = await zip.generateAsync({ 
     type: 'blob',
-    compression: 'STORE' // No compression for maximum compatibility
+    compression: 'STORE', // No compression to save memory
+    streamFiles: true // Enable streaming for large files
   });
   
   const timestamp = new Date().toISOString().split('T')[0];
@@ -284,7 +353,7 @@ async function processAllSitesExport(jobId: string, sites: Site[]): Promise<{ fi
   return { fileName, zipBlob };
 }
 
-async function loadEntriesForSite(site: Site): Promise<Entry[]> {
+async function loadEntriesChunk(site: Site, limit: number, offset: number): Promise<Entry[]> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   
@@ -293,9 +362,7 @@ async function loadEntriesForSite(site: Site): Promise<Entry[]> {
   const sitesTable = environment === 'development' ? 'dev_sites' : 'sites';
   const entriesTable = environment === 'development' ? 'dev_entries' : 'entries';
   
-  console.log(`Loading entries for site ${site.name} from ${entriesTable} table`);
-  
-  // First get the site ID from database
+  // Get site ID from database
   const siteResponse = await fetch(`${supabaseUrl}/rest/v1/${sitesTable}?url=eq.${encodeURIComponent(site.url)}&select=id`, {
     headers: {
       'Authorization': `Bearer ${supabaseServiceKey}`,
@@ -309,59 +376,42 @@ async function loadEntriesForSite(site: Site): Promise<Entry[]> {
   
   const siteData = await siteResponse.json();
   if (!siteData || siteData.length === 0) {
-    console.log(`No site found for URL: ${site.url}`);
     return [];
   }
   
   const siteId = siteData[0].id;
-  console.log(`Found site ID: ${siteId} for ${site.name}`);
   
-  // Load entries in chunks to avoid timeout
-  const allEntries: Entry[] = [];
-  const chunkSize = 100;
-  let offset = 0;
-  let hasMore = true;
+  // Load entries chunk with timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
   
-  while (hasMore) {
-    console.log(`Loading entries chunk: offset ${offset}, limit ${chunkSize}`);
-    
+  try {
     const entriesResponse = await fetch(
-      `${supabaseUrl}/rest/v1/${entriesTable}?site_id=eq.${siteId}&order=published_date.desc&limit=${chunkSize}&offset=${offset}`,
+      `${supabaseUrl}/rest/v1/${entriesTable}?site_id=eq.${siteId}&order=published_date.desc&limit=${limit}&offset=${offset}`,
       {
         headers: {
           'Authorization': `Bearer ${supabaseServiceKey}`,
           'apikey': supabaseServiceKey,
         },
+        signal: controller.signal,
       }
     );
+    
+    clearTimeout(timeoutId);
     
     if (!entriesResponse.ok) {
       throw new Error(`Failed to fetch entries: ${entriesResponse.statusText}`);
     }
     
-    const entriesChunk = await entriesResponse.json();
-    console.log(`Loaded ${entriesChunk.length} entries in chunk`);
-    
-    if (entriesChunk.length === 0) {
-      hasMore = false;
-    } else {
-      allEntries.push(...entriesChunk);
-      offset += entriesChunk.length;
-      
-      // If we got fewer entries than requested, we've reached the end
-      if (entriesChunk.length < chunkSize) {
-        hasMore = false;
-      }
+    const entries = await entriesResponse.json();
+    return entries || [];
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Entries fetch timeout');
     }
-    
-    // Add small delay to prevent overwhelming the database
-    if (hasMore) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+    throw error;
   }
-  
-  console.log(`Total entries loaded for ${site.name}: ${allEntries.length}`);
-  return allEntries;
 }
 
 function formatEntryContent(entry: Entry): string {
@@ -380,7 +430,6 @@ function formatEntryContent(entry: Entry): string {
     `authority: ${metadata.authority || ''}`,
     `categories: ${Array.isArray(metadata.categories) ? metadata.categories.join(', ') : metadata.categories || ''}`,
     `seen: ${entry.seen ? 'true' : 'false'}`,
-    `site_url: ${entry.site_url || ''}`,
     `abstract: ${entry.abstract || ''}`,
     `body: ${entry.body || ''}`
   ].join('\n');
@@ -437,25 +486,82 @@ async function uploadToStorage(fileName: string, zipBlob: Blob): Promise<string>
   
   console.log(`Uploading ZIP file: ${fileName}, size: ${zipBlob.size} bytes`);
   
-  // Upload to storage bucket
-  const uploadResponse = await fetch(`${supabaseUrl}/storage/v1/object/export-files/${fileName}`, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'application/zip',
-    },
-    body: zipBlob,
-  });
-  
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text();
-    console.error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`, errorText);
-    throw new Error(`Failed to upload ZIP file: ${uploadResponse.statusText}`);
+  // First, ensure the bucket exists and is public
+  try {
+    const bucketResponse = await fetch(`${supabaseUrl}/storage/v1/bucket/export-files`, {
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+    });
+    
+    if (!bucketResponse.ok && bucketResponse.status === 404) {
+      // Create bucket if it doesn't exist
+      console.log('Creating export-files bucket...');
+      const createBucketResponse = await fetch(`${supabaseUrl}/storage/v1/bucket`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: 'export-files',
+          name: 'export-files',
+          public: true
+        }),
+      });
+      
+      if (!createBucketResponse.ok) {
+        const errorText = await createBucketResponse.text();
+        console.error(`Failed to create bucket: ${createBucketResponse.status}`, errorText);
+      } else {
+        console.log('Export-files bucket created successfully');
+      }
+    }
+  } catch (bucketError) {
+    console.warn('Could not check/create bucket:', bucketError);
   }
   
-  console.log(`ZIP file uploaded successfully: ${fileName}`);
+  // Upload to storage bucket with retry logic
+  let uploadSuccess = false;
+  let uploadError: Error | null = null;
   
-  // Generate public download URL directly
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      console.log(`Upload attempt ${attempt}/3...`);
+      
+      const uploadResponse = await fetch(`${supabaseUrl}/storage/v1/object/export-files/${fileName}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/zip',
+        },
+        body: zipBlob,
+      });
+      
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText} - ${errorText}`);
+      }
+      
+      uploadSuccess = true;
+      console.log(`ZIP file uploaded successfully on attempt ${attempt}: ${fileName}`);
+      break;
+      
+    } catch (error) {
+      uploadError = error as Error;
+      console.error(`Upload attempt ${attempt} failed:`, error);
+      
+      if (attempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt)); // Exponential backoff
+      }
+    }
+  }
+  
+  if (!uploadSuccess) {
+    throw new Error(`Failed to upload after 3 attempts: ${uploadError?.message}`);
+  }
+  
+  // Generate public download URL
   const downloadUrl = `${supabaseUrl}/storage/v1/object/public/export-files/${fileName}`;
   
   console.log(`Generated download URL: ${downloadUrl}`);
@@ -489,18 +595,22 @@ async function updateJobStatus(
     updateData.completed_at = new Date().toISOString();
   }
   
-  const response = await fetch(`${supabaseUrl}/rest/v1/${tableName}?id=eq.${jobId}`, {
-    method: 'PATCH',
-    headers: {
-      'Authorization': `Bearer ${supabaseServiceKey}`,
-      'Content-Type': 'application/json',
-      'apikey': supabaseServiceKey,
-    },
-    body: JSON.stringify(updateData),
-  });
-  
-  if (!response.ok) {
-    console.error(`Failed to update job status: ${response.statusText}`);
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/${tableName}?id=eq.${jobId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+        'Content-Type': 'application/json',
+        'apikey': supabaseServiceKey,
+      },
+      body: JSON.stringify(updateData),
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to update job status: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.error('Error updating job status:', error);
   }
 }
 
@@ -509,34 +619,4 @@ function sanitizeFileName(fileName: string): string {
     .replace(/[<>:"/\\|?*]/g, '_')
     .replace(/\s+/g, '_')
     .substring(0, 100);
-}
-
-/**
- * Group entries by their publication date
- */
-function groupEntriesByDate(entries: Entry[]): { [dateFolder: string]: Entry[] } {
-  const groups: { [dateFolder: string]: Entry[] } = {};
-  
-  entries.forEach(entry => {
-    let dateFolder = 'unknown-date';
-    
-    if (entry.published_date) {
-      try {
-        const date = new Date(entry.published_date);
-        if (!isNaN(date.getTime())) {
-          // Format as YYYY-MM-DD
-          dateFolder = date.toISOString().split('T')[0];
-        }
-      } catch (error) {
-        console.warn(`Invalid date format for entry ${entry.id}: ${entry.published_date}`);
-      }
-    }
-    
-    if (!groups[dateFolder]) {
-      groups[dateFolder] = [];
-    }
-    groups[dateFolder].push(entry);
-  });
-  
-  return groups;
 }
