@@ -20,9 +20,10 @@ export async function withRetry<T>(
     } catch (error) {
       lastError = error as Error;
       
-      if (error.message && error.message.includes('timeout')) {
+      if (error.message && (error.message.includes('timeout') || error.message.includes('Failed to fetch'))) {
         consecutiveTimeouts++;
-        console.warn(`⏱️ ${operationName} timeout (attempt ${attempt}/${maxRetries}, consecutive timeouts: ${consecutiveTimeouts}):`, error.message);
+        const errorType = error.message.includes('timeout') ? 'timeout' : 'fetch failure';
+        console.warn(`⏱️ ${operationName} ${errorType} (attempt ${attempt}/${maxRetries}, consecutive failures: ${consecutiveTimeouts}):`, error.message);
         
         if (onTimeout && attempt === 1) {
           onTimeout(attempt, maxRetries);
@@ -34,16 +35,16 @@ export async function withRetry<T>(
           const jitter = Math.random() * 1000; // Add up to 1 second of jitter
           const delay = baseDelay + jitter;
           
-          console.log(`⏳ Retrying ${operationName} in ${Math.round(delay)}ms...`);
+          console.log(`⏳ Retrying ${operationName} in ${Math.round(delay)}ms... (${errorType})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }
       } else {
-        console.error(`❌ Non-timeout error in ${operationName}:`, error);
+        console.error(`❌ Non-retriable error in ${operationName}:`, error);
         if (onError) {
           onError(error);
         }
-        break; // Don't retry non-timeout errors
+        break; // Don't retry non-retriable errors
       }
     }
   }
