@@ -154,17 +154,6 @@ Deno.serve(async (req: Request) => {
 async function processSingleSiteExportStreaming(jobId: string, site: Site): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing single site export for: ${site.name}`);
   
-  // First, get the actual total count of entries for this site
-  const actualTotal = await getEntryCount(site);
-  console.log(`Site ${site.name} has ${actualTotal} total entries`);
-  
-  await updateJobStatus(jobId, 'processing', {
-    current: 10,
-    total: actualTotal,
-    step: 'loading-entries',
-    currentSite: site.name
-  });
-  
   // Create ZIP with streaming approach
   const zip = new JSZip();
   const siteFolderName = sanitizeFileName(site.name);
@@ -174,15 +163,14 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
     throw new Error('Failed to create site folder in ZIP');
   }
   
-  // Load and process entries in small chunks to avoid memory issues
+  // Load and process entries in larger chunks to reduce CPU overhead
   let totalProcessed = 0;
-  const chunkSize = 10; // Small chunks to minimize CPU usage per iteration
+  const chunkSize = 50; // Larger chunks to reduce database calls
   let offset = 0;
   let hasMore = true;
+  let estimatedTotal = 1000; // Start with estimate
   
   while (hasMore) {
-    console.log(`Loading chunk starting at offset ${offset}`);
-    
     const entries = await loadEntriesChunk(site, chunkSize, offset);
     
     if (entries.length === 0) {
@@ -190,34 +178,28 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
       break;
     }
     
+    // Update estimate based on chunk size
+    if (entries.length === chunkSize && totalProcessed === 0) {
+      estimatedTotal = Math.max(estimatedTotal, offset + chunkSize * 10); // Rough estimate
+    }
+    
     // Process this chunk
     entries.forEach((entry) => {
-      // Get publication date for folder organization
-      const dateFolder = getDateFolder(entry.published_date);
-      
-      // Create or get the date folder within the site folder
-      let dateFolderInSite = siteFolder.folder(dateFolder);
-      if (!dateFolderInSite) {
-        dateFolderInSite = siteFolder.folder(dateFolder);
-      }
-      
-      if (dateFolderInSite) {
-        const fileName = `${sanitizeFileName(entry.id)}.txt`;
-        const content = formatEntryContent(entry);
-        dateFolderInSite.file(fileName, content);
-        totalProcessed++;
-      }
+      const fileName = `${sanitizeFileName(entry.id)}.txt`;
+      const content = formatEntryContent(entry);
+      siteFolder.file(fileName, content); // Put all files in main folder to reduce complexity
+      totalProcessed++;
     });
     
-    console.log(`Processed chunk: ${entries.length} entries (total: ${totalProcessed})`);
-    
-    // Update progress
-    await updateJobStatus(jobId, 'processing', {
-      current: totalProcessed,
-      total: actualTotal,
-      step: 'creating-zip',
-      currentSite: site.name
-    });
+    // Update progress less frequently to reduce CPU usage
+    if (totalProcessed % 100 === 0 || entries.length < chunkSize) {
+      await updateJobStatus(jobId, 'processing', {
+        current: totalProcessed,
+        total: Math.max(estimatedTotal, totalProcessed),
+        step: 'creating-zip',
+        currentSite: site.name
+      });
+    }
     
     // If we got fewer entries than requested, we've reached the end
     if (entries.length < chunkSize) {
@@ -225,9 +207,6 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
     } else {
       offset += entries.length;
     }
-    
-    // Small delay to prevent memory buildup
-    await new Promise(resolve => setTimeout(resolve, 100));
   }
   
   // Add site info file
@@ -236,7 +215,7 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
   
   await updateJobStatus(jobId, 'processing', {
     current: totalProcessed,
-    total: actualTotal,
+    total: totalProcessed,
     step: 'generating-zip',
     currentSite: site.name
   });
@@ -256,45 +235,6 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
   return { fileName, zipBlob };
 }
 
-async function getEntryCount(site: Site): Promise<number> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  
-  // Determine table names based on environment
-  const environment = Deno.env.get('VITE_ENVIRONMENT') || 'development';
-  const entriesTable = environment === 'development' ? 'dev_entries' : 'entries';
-  
-  try {
-    const countResponse = await fetch(
-      `${supabaseUrl}/rest/v1/${entriesTable}?site_id=eq.${site.id}&select=count`,
-      {
-        headers: {
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-          'apikey': supabaseServiceKey,
-          'Prefer': 'count=exact'
-        },
-      }
-    );
-    
-    if (!countResponse.ok) {
-      console.warn(`Failed to get entry count, using fallback: ${countResponse.statusText}`);
-      return 1000; // Fallback estimate
-    }
-    
-    const countHeader = countResponse.headers.get('content-range');
-    if (countHeader) {
-      const match = countHeader.match(/\/(\d+)$/);
-      if (match) {
-        return parseInt(match[1], 10);
-      }
-    }
-    
-    return 1000; // Fallback estimate
-  } catch (error) {
-    console.warn('Error getting entry count:', error);
-    return 1000; // Fallback estimate
-  }
-}
 async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Promise<{ fileName: string; zipBlob: Blob }> {
   console.log(`Processing all sites export for ${sites.length} sites`);
   
@@ -317,13 +257,12 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
       const siteFolder = zip.folder(siteFolderName);
       
       if (!siteFolder) {
-        console.error(`Failed to create folder for site: ${site.name}`);
         continue;
       }
       
       // Load entries in small chunks for this site
       let siteEntryCount = 0;
-      const chunkSize = 10; // Small chunks to minimize CPU usage per iteration
+      const chunkSize = 50; // Larger chunks to reduce database calls
       let offset = 0;
       let hasMore = true;
       
@@ -344,17 +283,12 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
           totalEntries++;
         });
         
-        console.log(`Site ${site.name}: processed ${entries.length} entries (site total: ${siteEntryCount})`);
-        
         // If we got fewer entries than requested, we've reached the end
         if (entries.length < chunkSize) {
           hasMore = false;
         } else {
           offset += entries.length;
         }
-        
-        // Longer delay between chunks for all-sites export
-        await new Promise(resolve => setTimeout(resolve, 200));
       }
       
       // Add site info file
@@ -363,15 +297,9 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
         siteFolder.file('_site_info.txt', siteInfo);
       }
       
-      console.log(`Completed site ${site.name}: ${siteEntryCount} entries`);
-      
     } catch (error) {
-      console.error(`Failed to process site ${site.name}:`, error);
       // Continue with other sites instead of failing completely
     }
-    
-    // Delay between sites to prevent memory buildup
-    await new Promise(resolve => setTimeout(resolve, 300));
   }
   
   await updateJobStatus(jobId, 'processing', {
