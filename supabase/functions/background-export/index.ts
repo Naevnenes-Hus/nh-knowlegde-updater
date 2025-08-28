@@ -198,22 +198,11 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
       }
       
       if (dateFolderInSite) {
-        // Get publication date for folder organization
-        const dateFolder = getDateFolder(entry.published_date);
-        
-        // Create or get the date folder within the site folder
-        let dateFolderInSite = siteFolder.folder(dateFolder);
-        if (!dateFolderInSite) {
-          dateFolderInSite = siteFolder.folder(dateFolder);
-        }
-        
-        if (dateFolderInSite) {
-          const fileName = `${sanitizeFileName(entry.id)}.txt`;
-          const content = formatEntryContent(entry);
-          dateFolderInSite.file(fileName, content);
-          siteEntryCount++;
-          totalEntries++;
-        }
+        const fileName = `${sanitizeFileName(entry.id)}.txt`;
+        const content = formatEntryContent(entry);
+        dateFolderInSite.file(fileName, content);
+        totalProcessed++;
+      }
     });
     
     console.log(`Processed chunk: ${entries.length} entries (total: ${totalProcessed})`);
