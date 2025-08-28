@@ -15,7 +15,6 @@ import { useSiteOperations } from './hooks/useSiteOperations';
 import { useEntryOperations } from './hooks/useEntryOperations';
 import { useAutoLoad } from './hooks/useAutoLoad';
 import { usePersistentOperations } from './hooks/usePersistentOperations';
-import { BackgroundExportService } from './services/BackgroundExportService';
 import BackgroundExportModal from './components/BackgroundExportModal';
 
 function App() {
@@ -210,27 +209,19 @@ function App() {
 
   const recentNewEntries = getRecentNewEntries(entries);
   const handleExportEntries = async (site: Site) => {
-    // Open background export modal instead of immediate export
     setShowBackgroundExportModal(true);
   };
 
   const handleExportAllSites = async () => {
-    // Open background export modal instead of immediate export
     setShowBackgroundExportModal(true);
   };
 
   const handleSyncToFolder = async () => {
-    // Open background export modal instead of immediate sync
     setShowBackgroundExportModal(true);
   };
 
-  const handleStartBackgroundExport = async (type: 'single_site' | 'all_sites' | 'sync', siteId?: string) => {
-    try {
-      const jobId = await BackgroundExportService.startExport(type, sites, siteId);
-      addLog(`Started background export job: ${jobId}`, 'success');
-    } catch (error) {
-      addLog(`Failed to start background export: ${error.message}`, 'error');
-    }
+  const handleStartBackgroundExport = async (type: 'single_site' | 'all_sites', siteId?: string) => {
+    // Export is handled directly in the modal component
   };
 
   const storageType = StorageService.getStorageType();
