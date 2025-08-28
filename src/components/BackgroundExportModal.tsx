@@ -110,8 +110,72 @@ const BackgroundExportModal: React.FC<BackgroundExportModalProps> = ({
         </div>
 
         <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+          {/* Export Progress Display */}
+          {exportProgress.isVisible && (
+            <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                  <span className="text-sm font-medium text-blue-900">
+                    {exportProgress.isComplete ? 'Export Complete!' : 'Preparing Export'}
+                  </span>
+                </div>
+              </div>
+              
+              <div className="text-sm text-blue-800 mb-2">
+                <strong>{exportProgress.currentSite || 'Processing...'}</strong>
+              </div>
+              
+              <div className="text-sm text-blue-700 mb-2">
+                {exportProgress.step}: {exportProgress.currentSite}
+              </div>
+              
+              {/* Sites Progress */}
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between text-xs text-blue-600">
+                  <span>Sites: {exportProgress.sitesProcessed} / {exportProgress.totalSites}</span>
+                  <span>{exportProgress.totalSites > 0 ? Math.round((exportProgress.sitesProcessed / exportProgress.totalSites) * 100) : 0}%</span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div 
+                    className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                    style={{ 
+                      width: `${exportProgress.totalSites > 0 ? Math.min((exportProgress.sitesProcessed / exportProgress.totalSites) * 100, 100) : 0}%` 
+                    }}
+                  />
+                </div>
+              </div>
+              
+              {/* Entries Progress */}
+              {exportProgress.totalEntries > 0 && (
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-blue-600">
+                    <span>Entries: {exportProgress.entriesProcessed.toLocaleString()} / {exportProgress.totalEntries.toLocaleString()}</span>
+                    <span>{Math.round((exportProgress.entriesProcessed / exportProgress.totalEntries) * 100)}%</span>
+                  </div>
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div 
+                      className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                      style={{ 
+                        width: `${Math.min((exportProgress.entriesProcessed / exportProgress.totalEntries) * 100, 100)}%` 
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {!exportProgress.isComplete && (
+                <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                  <p className="text-xs text-yellow-800">
+                    <strong>Please wait:</strong> Keep this window open during export.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+          
           {/* Start New Export Section */}
-          <div className="mb-8">
+          <div className={exportProgress.isVisible ? "mb-4" : "mb-8"}>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Start Export</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {selectedSite && (
