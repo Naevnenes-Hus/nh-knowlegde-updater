@@ -172,7 +172,7 @@ async function processSingleSiteExportStreaming(jobId: string, site: Site): Prom
   
   // Load and process entries in small chunks to avoid memory issues
   let totalProcessed = 0;
-  const chunkSize = 100; // Increased chunk size to reduce CPU overhead
+  const chunkSize = 5; // Very small chunks to minimize CPU usage per iteration
   let offset = 0;
   let hasMore = true;
   
@@ -280,7 +280,7 @@ async function processAllSitesExportStreaming(jobId: string, sites: Site[]): Pro
       
       // Load entries in small chunks for this site
       let siteEntryCount = 0;
-      const chunkSize = 100; // Increased chunk size to reduce CPU overhead
+      const chunkSize = 5; // Very small chunks to minimize CPU usage per iteration
       let offset = 0;
       let hasMore = true;
       
