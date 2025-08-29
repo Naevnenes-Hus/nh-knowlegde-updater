@@ -36,6 +36,7 @@ export const usePersistentOperations = ({
   const cancelledOperationsRef = useRef<Set<string>>(new Set());
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const operationStatusRef = useRef<Map<string, 'running' | 'paused' | 'cancelled'>>(new Map());
+  const [verifyingSiteIds, setVerifyingSiteIds] = useState<string[]>([]);
 
   // Update sites ref whenever sites prop changes
   useEffect(() => {
@@ -728,48 +729,91 @@ export const usePersistentOperations = ({
 
   const startPersistentFetch = async (site: Site) => {
     console.log(`🚀 START: User clicked persistent fetch for ${site.name}`);
-    
+    setVerifyingSiteIds(prev => [...prev, site.id]);
+
     // Show progress immediately
     setPersistentFetchProgress({
       isVisible: true,
       siteName: site.name,
-      step: 'starting',
+      step: 'checking',
       current: 0,
       total: 0,
-      message: 'Starting persistent fetch...'
+      message: 'Validating existing entries...'
     });
-    
+
     try {
       addLog(`🚀 Starting persistent fetch for ${site.name}`, 'info');
-      
+
       // Check if there's already an operation for this site (more thorough check)
       const allOperations = await PersistentOperationService.getActiveOperations();
-      const existingOperations = allOperations.filter(op => 
-        op.siteId === site.id && 
+      const existingOperations = allOperations.filter(op =>
+        op.siteId === site.id &&
         (op.status === 'running' || op.status === 'paused') &&
         op.type === 'fetch_entries'
       );
-      
+
       if (existingOperations.length > 0) {
         console.log(`⚠️ START: ${existingOperations.length} fetch operation(s) already exist for ${site.name}`);
         addLog(`⚠️ Fetch operation already active for ${site.name} - check Active Operations section`, 'warning');
+        setPersistentFetchProgress({
+          isVisible: false,
+          siteName: '',
+          step: '',
+          current: 0,
+          total: 0,
+          message: ''
+        });
         return;
       }
 
       console.log(`📋 START: Loading existing entries and sitemap for ${site.name}`);
       addLog(`📋 Checking existing entries and sitemap for ${site.name}...`, 'info');
-      
-      // Get new entries to fetch
+
+      // Get new entries to fetch with progress
       const existingEntries = await StorageService.loadAllEntriesForSite(site.url);
       const existingIds = new Set(existingEntries.map(entry => entry.id));
       const allGuids = await StorageService.loadSitemap(site.url);
-      const newGuids = allGuids.filter(guid => !existingIds.has(guid));
+
+      setPersistentFetchProgress({
+        isVisible: true,
+        siteName: site.name,
+        step: 'checking',
+        current: 0,
+        total: allGuids.length,
+        message: `Checking 0/${allGuids.length} entries...`
+      });
+
+      const newGuids: string[] = [];
+      for (let i = 0; i < allGuids.length; i++) {
+        const guid = allGuids[i];
+        if (!existingIds.has(guid)) {
+          newGuids.push(guid);
+        }
+        if ((i + 1) % 100 === 0 || i === allGuids.length - 1) {
+          setPersistentFetchProgress({
+            isVisible: true,
+            siteName: site.name,
+            step: 'checking',
+            current: i + 1,
+            total: allGuids.length,
+            message: `Checking ${i + 1}/${allGuids.length} entries...`
+          });
+        }
+      }
 
       console.log(`📋 START: Found ${existingEntries.length} existing entries, ${allGuids.length} in sitemap, ${newGuids.length} new`);
 
       if (newGuids.length === 0) {
         console.log(`ℹ️ START: No new entries found for ${site.name}`);
         addLog(`ℹ️ No new entries to fetch for ${site.name} - all entries are up to date`, 'info');
+        setPersistentFetchProgress({
+          isVisible: true,
+          siteName: site.name,
+          step: 'complete',
+          current: allGuids.length,
+          total: allGuids.length,
+          message: 'All entries are up to date'
+        });
         return;
       }
 
@@ -814,7 +858,7 @@ export const usePersistentOperations = ({
           return [...prev, operation];
         });
       }
-      
+
       console.log(`✅ START: Operation saved, starting processing`);
       addLog(`🚀 Started persistent fetch for ${site.name}: ${guidsToFetch.length} entries queued`, 'success');
 
@@ -824,7 +868,7 @@ export const usePersistentOperations = ({
     } catch (error) {
       console.error(`❌ START ERROR: Failed to start persistent fetch for ${site.name}:`, error);
       addLog(`❌ Failed to start persistent fetch for ${site.name}: ${error.message}`, 'error');
-      
+
       // Hide progress on error
       setPersistentFetchProgress({
         isVisible: false,
@@ -834,6 +878,8 @@ export const usePersistentOperations = ({
         total: 0,
         message: ''
       });
+    } finally {
+      setVerifyingSiteIds(prev => prev.filter(id => id !== site.id));
     }
   };
 
@@ -937,6 +983,7 @@ export const usePersistentOperations = ({
 
   return {
     activeOperations,
+    verifyingSiteIds,
     startPersistentFetch,
     stopOperation,
     cancelOperation,

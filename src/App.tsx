@@ -132,7 +132,7 @@ function App() {
   // Initialize hooks
   const { autoLoadStatus, startAutoLoad } = useAutoLoad(addLog, setShowSites);
   
-  const { activeOperations, startPersistentFetch, stopOperation, cancelOperation } = usePersistentOperations({
+  const { activeOperations, startPersistentFetch, stopOperation, cancelOperation, verifyingSiteIds } = usePersistentOperations({
     sites,
     setSites,
     addLog,
@@ -329,13 +329,14 @@ function App() {
             onStopOperation={stopCurrentOperation}
             newEntriesCount={newEntriesCount}
             autoLoadStatus={autoLoadStatus}
-            fetchStatus={siteOperations.fetchStatus}
-            showSites={showSites}
-            activeOperations={activeOperations}
-            onStartPersistentFetch={startPersistentFetch}
-            onStopPersistentOperation={stopOperation}
-            onCancelPersistentOperation={cancelOperation}
-          />
+          fetchStatus={siteOperations.fetchStatus}
+          showSites={showSites}
+          activeOperations={activeOperations}
+          verifyingSiteIds={verifyingSiteIds}
+          onStartPersistentFetch={startPersistentFetch}
+          onStopPersistentOperation={stopOperation}
+          onCancelPersistentOperation={cancelOperation}
+        />
           
           <EntryList
             entries={entries}
