@@ -448,9 +448,9 @@ export const usePersistentOperations = ({
           isVisible: true,
           siteName: site.name,
           step: 'fetching',
-          current: overallProgress,
+          current: batchProgress + batchEntries.length,
           total: guidsToFetch.length,
-          message: `Processing chunk ${Math.floor(i / chunkSize) + 1}: ${overallProgress + 1}-${overallProgress + chunk.length} of ${guidsToFetch.length}`
+          message: `💾 Saving batch of ${batchEntries.length} entries to database...`
         });
 
         // Process this chunk in batches of 50: fetch 50, save 50, fetch 50, save 50...
@@ -729,6 +729,16 @@ export const usePersistentOperations = ({
   const startPersistentFetch = async (site: Site) => {
     console.log(`🚀 START: User clicked persistent fetch for ${site.name}`);
     
+    // Show progress immediately
+    setPersistentFetchProgress({
+      isVisible: true,
+      siteName: site.name,
+      step: 'starting',
+      current: 0,
+      total: 0,
+      message: 'Starting persistent fetch...'
+    });
+    
     try {
       addLog(`🚀 Starting persistent fetch for ${site.name}`, 'info');
       
@@ -806,6 +816,16 @@ export const usePersistentOperations = ({
     } catch (error) {
       console.error(`❌ START ERROR: Failed to start persistent fetch for ${site.name}:`, error);
       addLog(`❌ Failed to start persistent fetch for ${site.name}: ${error.message}`, 'error');
+      
+      // Hide progress on error
+      setPersistentFetchProgress({
+        isVisible: false,
+        siteName: '',
+        step: '',
+        current: 0,
+        total: 0,
+        message: ''
+      });
     }
   };
 

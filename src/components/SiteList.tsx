@@ -54,14 +54,12 @@ const SiteList: React.FC<SiteListProps> = ({
 
   const getSiteOperation = (siteId: string) => {
     const operation = activeOperations.find(op => op.siteId === siteId && (op.status === 'running' || op.status === 'paused'));
-    console.log(`Getting operation for site ${siteId}:`, operation ? `${operation.status} - ${operation.progress.current}/${operation.progress.total}` : 'none');
     return operation;
   };
 
   const isSiteOperationRunning = (siteId: string) => {
     const operation = getSiteOperation(siteId);
     const isRunning = operation && operation.status === 'running';
-    console.log(`Is site ${siteId} operation running:`, isRunning);
     return isRunning;
   };
 
@@ -163,25 +161,25 @@ const SiteList: React.FC<SiteListProps> = ({
                   console.log('Starting persistent fetch for:', site.name);
                   onStartPersistentFetch(site);
                 }}
-                disabled={isLoading || !!getSiteOperation(site.id)}
+                disabled={isLoading || isSiteOperationRunning(site.id)}
                 className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
-                  getSiteOperation(site.id) 
+                  isSiteOperationRunning(site.id)
                     ? isSiteOperationRunning(site.id)
-                      ? 'bg-blue-100 text-blue-700 cursor-not-allowed animate-pulse' 
+                      ? 'bg-blue-100 text-blue-700 cursor-not-allowed' 
                       : 'bg-yellow-100 text-yellow-700 cursor-not-allowed'
                     : isLoading 
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
                     : 'bg-green-100 text-green-700 hover:bg-green-200 active:bg-green-300'
                 }`}
                 title={
-                  getSiteOperation(site.id) 
+                  isSiteOperationRunning(site.id)
                     ? isSiteOperationRunning(site.id)
                       ? `Fetch in progress for ${site.name}`
                       : `Fetch paused for ${site.name}`
                     : `Start Persistent Fetch ${getNewEntriesText(site)}`
                 }
               >
-                <Download size={12} className={isSiteOperationRunning(site.id) ? 'animate-spin' : getSiteOperation(site.id) ? 'animate-pulse' : ''} />
+                <Download size={12} className={isSiteOperationRunning(site.id) ? 'animate-spin' : ''} />
               </button>
               
               <button
