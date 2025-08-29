@@ -782,6 +782,8 @@ export const usePersistentOperations = ({
         total: allGuids.length,
         message: `Checking 0/${allGuids.length} entries...`
       });
+      // Yield to allow the UI to render the initial progress state
+      await new Promise(resolve => setTimeout(resolve, 0));
 
       const newGuids: string[] = [];
       for (let i = 0; i < allGuids.length; i++) {
@@ -798,6 +800,8 @@ export const usePersistentOperations = ({
             total: allGuids.length,
             message: `Checking ${i + 1}/${allGuids.length} entries...`
           });
+          // Allow React to update the progress bar
+          await new Promise(resolve => setTimeout(resolve, 0));
         }
       }
 
