@@ -69,3 +69,31 @@ VITE_ENVIRONMENT=production
 ```
 
 This setup ensures complete data isolation between your development and production environments.
+
+## OpenAI-Compatible Endpoint
+
+The project includes a minimal server that exposes an OpenAI-compatible chat completions API backed by Supabase data.
+
+### Start the Server
+
+```bash
+npm start
+```
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:3000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "supabase-query",
+    "messages": [
+      {"role": "user", "content": "https://example.com"}
+    ]
+  }'
+```
+
+### OpenWebUI Configuration
+
+Set the API Base URL to `http://localhost:3000` and supply the same API key in the authorization field. Use any model name (e.g., `supabase-query`).
