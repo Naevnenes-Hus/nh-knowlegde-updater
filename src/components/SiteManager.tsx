@@ -163,15 +163,30 @@ const SiteManager: React.FC<SiteManagerProps> = ({
           </div>
         ) : (
           activeOperations.map(operation => (
-            <div key={operation.id} className="p-3 bg-green-50 border border-green-200 rounded-lg mb-2">
+            <div key={operation.id} className={`p-3 rounded-lg mb-2 ${
+              operation.status === 'running' ? 'bg-blue-50 border border-blue-200' :
+              operation.status === 'paused' ? 'bg-yellow-50 border border-yellow-200' :
+              operation.status === 'completed' ? 'bg-green-50 border border-green-200' :
+              'bg-red-50 border border-red-200'
+            }`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <RefreshCw size={16} className={`text-green-600 ${
+                  <RefreshCw size={16} className={`${
                     operation.status === 'running' ? 'animate-spin' : 
                     operation.status === 'completed' ? 'text-blue-600' :
                     operation.status === 'failed' ? 'text-red-600' : ''
+                  } ${
+                    operation.status === 'running' ? 'text-blue-600' :
+                    operation.status === 'paused' ? 'text-yellow-600' :
+                    operation.status === 'completed' ? 'text-green-600' :
+                    'text-red-600'
                   }`} />
-                  <span className="text-sm font-medium text-green-900">
+                  <span className={`text-sm font-medium ${
+                    operation.status === 'running' ? 'text-blue-900' :
+                    operation.status === 'paused' ? 'text-yellow-900' :
+                    operation.status === 'completed' ? 'text-green-900' :
+                    'text-red-900'
+                  }`}>
                     {operation.type === 'fetch_entries' ? 'Fetching Entries' : 'Updating Sitemap'}
                     {operation.status === 'paused' && ' (PAUSED)'}
                     {operation.status === 'completed' && ' (COMPLETED)'}
@@ -181,11 +196,12 @@ const SiteManager: React.FC<SiteManagerProps> = ({
                 <div className="flex gap-1">
                   <button
                     onClick={() => onStopPersistentOperation(operation.id)}
-                    className={`text-xs px-2 py-1 rounded transition-colors ${
+                    className={`text-xs px-2 py-1 rounded transition-colors disabled:opacity-50 ${
                       operation.status === 'running' 
                         ? 'bg-red-100 text-red-700 hover:bg-red-200' 
                         : 'bg-green-100 text-green-700 hover:bg-green-200'
                     }`}
+                    disabled={operation.status === 'completed' || operation.status === 'failed'}
                   >
                     {operation.status === 'running' ? 'Pause' : 'Resume'}
                   </button>
@@ -202,23 +218,48 @@ const SiteManager: React.FC<SiteManagerProps> = ({
                 </div>
               </div>
               
-              <div className="text-sm text-green-800 mb-2">
+              <div className={`text-sm mb-2 ${
+                operation.status === 'running' ? 'text-blue-800' :
+                operation.status === 'paused' ? 'text-yellow-800' :
+                operation.status === 'completed' ? 'text-green-800' :
+                'text-red-800'
+              }`}>
                 <strong>{operation.siteName}</strong>
               </div>
               
-              <div className="text-sm text-green-700 mb-2">
+              <div className={`text-sm mb-2 ${
+                operation.status === 'running' ? 'text-blue-700' :
+                operation.status === 'paused' ? 'text-yellow-700' :
+                operation.status === 'completed' ? 'text-green-700' :
+                'text-red-700'
+              }`}>
                 {operation.message}
               </div>
               
               {operation.progress.total > 0 && (
                 <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-green-600">
+                  <div className={`flex justify-between text-xs ${
+                    operation.status === 'running' ? 'text-blue-600' :
+                    operation.status === 'paused' ? 'text-yellow-600' :
+                    operation.status === 'completed' ? 'text-green-600' :
+                    'text-red-600'
+                  }`}>
                     <span>{operation.progress.current} / {operation.progress.total}</span>
                     <span>{Math.round((operation.progress.current / operation.progress.total) * 100)}%</span>
                   </div>
-                  <div className="w-full bg-green-200 rounded-full h-2">
+                  <div className={`w-full rounded-full h-2 ${
+                    operation.status === 'running' ? 'bg-blue-200' :
+                    operation.status === 'paused' ? 'bg-yellow-200' :
+                    operation.status === 'completed' ? 'bg-green-200' :
+                    'bg-red-200'
+                  }`}>
                     <div 
-                      className="bg-green-600 h-2 rounded-full transition-all duration-300"
+                      className={`h-2 rounded-full transition-all duration-300 ${
+                        operation.status === 'running' ? 'bg-blue-600' :
+                        operation.status === 'paused' ? 'bg-yellow-600' :
+                        operation.status === 'completed' ? 'bg-green-600' :
+                        'bg-red-600'
+                      }`}
                       style={{ 
                         width: `${Math.min((operation.progress.current / operation.progress.total) * 100, 100)}%` 
                       }}
