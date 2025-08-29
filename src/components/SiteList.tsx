@@ -53,7 +53,12 @@ const SiteList: React.FC<SiteListProps> = ({
   };
 
   const getSiteOperation = (siteId: string) => {
-    return null; // Remove operation info from site cards
+    return activeOperations.find(op => op.siteId === siteId && (op.status === 'running' || op.status === 'paused'));
+  };
+
+  const isSiteOperationRunning = (siteId: string) => {
+    const operation = getSiteOperation(siteId);
+    return operation && operation.status === 'running';
   };
 
   return (
@@ -154,17 +159,25 @@ const SiteList: React.FC<SiteListProps> = ({
                   console.log('Starting persistent fetch for:', site.name);
                   onStartPersistentFetch(site);
                 }}
-                disabled={isLoading || getSiteOperation(site.id)}
+                disabled={isLoading || !!getSiteOperation(site.id)}
                 className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
                   getSiteOperation(site.id) 
-                    ? 'bg-yellow-100 text-yellow-700 cursor-not-allowed' 
+                    ? isSiteOperationRunning(site.id)
+                      ? 'bg-blue-100 text-blue-700 cursor-not-allowed animate-pulse' 
+                      : 'bg-yellow-100 text-yellow-700 cursor-not-allowed'
                     : isLoading 
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
                     : 'bg-green-100 text-green-700 hover:bg-green-200 active:bg-green-300'
                 }`}
-                title={`Start Persistent Fetch ${getNewEntriesText(site)}`}
+                title={
+                  getSiteOperation(site.id) 
+                    ? isSiteOperationRunning(site.id)
+                      ? `Fetch in progress for ${site.name}`
+                      : `Fetch paused for ${site.name}`
+                    : `Start Persistent Fetch ${getNewEntriesText(site)}`
+                }
               >
-                <Download size={12} className={getSiteOperation(site.id) ? 'animate-pulse' : ''} />
+                <Download size={12} className={isSiteOperationRunning(site.id) ? 'animate-spin' : getSiteOperation(site.id) ? 'animate-pulse' : ''} />
               </button>
               
               <button
