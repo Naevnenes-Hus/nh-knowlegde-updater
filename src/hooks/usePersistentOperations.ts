@@ -797,7 +797,10 @@ export const usePersistentOperations = ({
 
       console.log(`💾 START: Saving operation to database:`, operation.id);
       await PersistentOperationService.saveOperation(operation);
-      
+
+      // Immediately add operation to state to update UI even if refresh fails
+      setActiveOperations(prevOps => [...prevOps, operation]);
+
       // Force refresh the operations list immediately
       try {
         const operations = await PersistentOperationService.getActiveOperations();
@@ -805,6 +808,11 @@ export const usePersistentOperations = ({
         console.log(`✅ START: Operations list updated, found ${operations.length} active operations`);
       } catch (error) {
         console.error('Failed to refresh operations list:', error);
+        // Ensure the new operation is still visible in case of refresh failure
+        setActiveOperations(prev => {
+          if (prev.some(op => op.id === operation.id)) return prev;
+          return [...prev, operation];
+        });
       }
       
       console.log(`✅ START: Operation saved, starting processing`);
