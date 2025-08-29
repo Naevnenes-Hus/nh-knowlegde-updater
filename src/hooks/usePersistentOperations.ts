@@ -445,6 +445,7 @@ export const usePersistentOperations = ({
         );
         
         // Process this chunk in batches of 50: fetch 50, save 50, fetch 50, save 50...
+        let batchProgress = 0;
         for (let batchStart = 0; batchStart < chunk.length; batchStart += fetchBatchSize) {
           // Check if component is still mounted during batch processing
           if (!mountedRef.current) {
@@ -478,7 +479,7 @@ export const usePersistentOperations = ({
           }
           
           const batch = chunk.slice(batchStart, batchStart + fetchBatchSize);
-          const batchProgress = overallProgress + batchStart;
+          batchProgress = overallProgress + batchStart;
           
           console.log(`📥 FETCH: Processing batch of ${batch.length} entries (${batchProgress + 1}-${batchProgress + batch.length} of ${guidsToFetch.length})`);
           
