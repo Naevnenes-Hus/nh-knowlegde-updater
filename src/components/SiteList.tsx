@@ -151,13 +151,20 @@ const SiteList: React.FC<SiteListProps> = ({
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onStartPersistentFetch(site); 
+                  console.log('Starting persistent fetch for:', site.name);
+                  onStartPersistentFetch(site);
                 }}
-                disabled={isLoading}
-                className="w-8 h-8 flex items-center justify-center bg-green-100 text-green-700 hover:bg-green-200 rounded transition-colors disabled:opacity-50"
+                disabled={isLoading || getSiteOperation(site.id)}
+                className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
+                  getSiteOperation(site.id) 
+                    ? 'bg-yellow-100 text-yellow-700 cursor-not-allowed' 
+                    : isLoading 
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                    : 'bg-green-100 text-green-700 hover:bg-green-200 active:bg-green-300'
+                }`}
                 title={`Start Persistent Fetch ${getNewEntriesText(site)}`}
               >
-                <Download size={12} />
+                <Download size={12} className={getSiteOperation(site.id) ? 'animate-pulse' : ''} />
               </button>
               
               <button

@@ -679,8 +679,9 @@ export const usePersistentOperations = ({
   };
 
   const startPersistentFetch = async (site: Site) => {
+    console.log(`🚀 START: User clicked persistent fetch for ${site.name}`);
+    
     try {
-      console.log(`🚀 START: Starting persistent fetch for ${site.name}`);
       addLog(`🚀 Starting persistent fetch for ${site.name}`, 'info');
       
       // Check if there's already an operation for this site (more thorough check)
@@ -693,11 +694,13 @@ export const usePersistentOperations = ({
       
       if (existingOperations.length > 0) {
         console.log(`⚠️ START: ${existingOperations.length} fetch operation(s) already exist for ${site.name}`);
-        addLog(`⚠️ Fetch operation already running for ${site.name}`, 'warning');
+        addLog(`⚠️ Fetch operation already active for ${site.name} - check Active Operations section`, 'warning');
         return;
       }
 
       console.log(`📋 START: Loading existing entries and sitemap for ${site.name}`);
+      addLog(`📋 Checking existing entries and sitemap for ${site.name}...`, 'info');
+      
       // Get new entries to fetch
       const existingEntries = await StorageService.loadAllEntriesForSite(site.url);
       const existingIds = new Set(existingEntries.map(entry => entry.id));
@@ -708,7 +711,7 @@ export const usePersistentOperations = ({
 
       if (newGuids.length === 0) {
         console.log(`ℹ️ START: No new entries found for ${site.name}`);
-        addLog(`ℹ️ No new entries found for ${site.name}`, 'info');
+        addLog(`ℹ️ No new entries to fetch for ${site.name} - all entries are up to date`, 'info');
         return;
       }
 
@@ -737,8 +740,12 @@ export const usePersistentOperations = ({
       console.log(`💾 START: Saving operation to database:`, operation.id);
       await PersistentOperationService.saveOperation(operation);
       
+      // Force refresh the operations list immediately
+      const operations = await PersistentOperationService.getActiveOperations();
+      setActiveOperations(operations);
+      
       console.log(`✅ START: Operation saved, starting processing`);
-      addLog(`🚀 Started persistent fetch for ${site.name}: ${guidsToFetch.length} entries`, 'info');
+      addLog(`🚀 Started persistent fetch for ${site.name}: ${guidsToFetch.length} entries queued`, 'success');
 
       // Start processing
       resumeOperation(operation, sitesRef.current);
