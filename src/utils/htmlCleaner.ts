@@ -3,6 +3,8 @@
  * Based on the original Python script's clean_html_text function
  */
 
+import { decode } from 'html-entities';
+
 export class HtmlCleaner {
   private static readonly HTML_ENTITIES: { [key: string]: string } = {
     // Non-breaking space
@@ -63,11 +65,9 @@ export class HtmlCleaner {
     
     // Collapse multiple whitespace characters into single spaces
     cleaned = cleaned.replace(/\s+/g, ' ');
-    
-    // Decode any remaining HTML entities using browser's built-in decoder
-    const textarea = document.createElement('textarea');
-    textarea.innerHTML = cleaned;
-    cleaned = textarea.value;
+
+    // Decode any remaining HTML entities
+    cleaned = decode(cleaned);
     
     return cleaned.trim();
   }
