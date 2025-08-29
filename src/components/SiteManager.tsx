@@ -44,6 +44,7 @@ interface SiteManagerProps {
   };
   showSites: boolean;
   activeOperations: PersistentOperation[];
+  verifyingSiteIds: string[];
   onStartPersistentFetch: (site: Site) => void;
   onStopPersistentOperation: (operationId: string) => void;
   onCancelPersistentOperation: (operationId: string) => void;
@@ -74,6 +75,7 @@ const SiteManager: React.FC<SiteManagerProps> = ({
   fetchStatus,
   showSites,
   activeOperations,
+  verifyingSiteIds,
   onStartPersistentFetch,
   onStopPersistentOperation,
   onCancelPersistentOperation
@@ -133,6 +135,7 @@ const SiteManager: React.FC<SiteManagerProps> = ({
         maxEntries={maxEntries}
         isLoading={isLoading}
         activeOperations={activeOperations}
+        verifyingSiteIds={verifyingSiteIds}
         onStartPersistentFetch={onStartPersistentFetch}
         onStopPersistentOperation={onStopPersistentOperation}
         onCancelPersistentOperation={onCancelPersistentOperation}

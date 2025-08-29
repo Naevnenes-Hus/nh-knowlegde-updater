@@ -22,6 +22,7 @@ interface SiteListProps {
   maxEntries: number;
   isLoading: boolean;
   activeOperations: PersistentOperation[];
+  verifyingSiteIds: string[];
   onStartPersistentFetch: (site: Site) => void;
   onStopPersistentOperation: (operationId: string) => void;
   onCancelPersistentOperation: (operationId: string) => void;
@@ -41,6 +42,7 @@ const SiteList: React.FC<SiteListProps> = ({
   maxEntries,
   isLoading,
   activeOperations,
+  verifyingSiteIds,
   onStartPersistentFetch,
   onStopPersistentOperation,
   onCancelPersistentOperation
@@ -61,6 +63,13 @@ const SiteList: React.FC<SiteListProps> = ({
     const operation = getSiteOperation(siteId);
     const isRunning = operation && operation.status === 'running';
     return isRunning;
+  };
+
+  const isVerifyingSite = (siteId: string) => verifyingSiteIds.includes(siteId);
+
+  const isSiteOperationPaused = (siteId: string) => {
+    const operation = getSiteOperation(siteId);
+    return operation && operation.status === 'paused';
   };
 
   return (
@@ -161,25 +170,27 @@ const SiteList: React.FC<SiteListProps> = ({
                   console.log('Starting persistent fetch for:', site.name);
                   onStartPersistentFetch(site);
                 }}
-                disabled={isLoading || isSiteOperationRunning(site.id)}
+                disabled={isLoading || isSiteOperationRunning(site.id) || isVerifyingSite(site.id)}
                 className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${
-                  isSiteOperationRunning(site.id)
-                    ? isSiteOperationRunning(site.id)
-                      ? 'bg-blue-100 text-blue-700 cursor-not-allowed' 
-                      : 'bg-yellow-100 text-yellow-700 cursor-not-allowed'
-                    : isLoading 
+                  isSiteOperationRunning(site.id) || isVerifyingSite(site.id)
+                    ? 'bg-blue-100 text-blue-700 cursor-not-allowed'
+                    : isSiteOperationPaused(site.id)
+                    ? 'bg-yellow-100 text-yellow-700 cursor-not-allowed'
+                    : isLoading
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
                     : 'bg-green-100 text-green-700 hover:bg-green-200 active:bg-green-300'
                 }`}
                 title={
                   isSiteOperationRunning(site.id)
-                    ? isSiteOperationRunning(site.id)
-                      ? `Fetch in progress for ${site.name}`
-                      : `Fetch paused for ${site.name}`
+                    ? `Fetch in progress for ${site.name}`
+                    : isSiteOperationPaused(site.id)
+                    ? `Fetch paused for ${site.name}`
+                    : isVerifyingSite(site.id)
+                    ? `Validating entries for ${site.name}...`
                     : `Start Persistent Fetch ${getNewEntriesText(site)}`
                 }
               >
-                <Download size={12} className={isSiteOperationRunning(site.id) ? 'animate-spin' : ''} />
+                <Download size={12} className={(isSiteOperationRunning(site.id) || isVerifyingSite(site.id)) ? 'animate-spin' : ''} />
               </button>
               
               <button
