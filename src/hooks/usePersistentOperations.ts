@@ -730,7 +730,7 @@ export const usePersistentOperations = ({
       step: 'checking',
       current: 0,
       total: 0,
-      message: 'Validating existing entries...'
+      message: 'Identifying new entries...'
     });
 
     try {
@@ -758,13 +758,13 @@ export const usePersistentOperations = ({
         return;
       }
 
-      console.log(`📋 START: Loading existing entries and sitemap for ${site.name}`);
-      addLog(`📋 Checking existing entries and sitemap for ${site.name}...`, 'info');
+      console.log(`📋 START: Loading sitemap for ${site.name}`);
+      addLog(`📋 Checking sitemap for ${site.name}...`, 'info');
 
-      // Get new entries to fetch with progress
-      const existingEntries = await StorageService.loadAllEntriesForSite(site.url);
-      const existingIds = new Set(existingEntries.map(entry => entry.id));
+      // Get new entries to fetch by comparing sitemap GUIDs against existing entry IDs
       const allGuids = await StorageService.loadSitemap(site.url);
+      const existingIdsArray = await StorageService.getExistingEntryIdsForSite(site.url, allGuids);
+      const existingIds = new Set(existingIdsArray);
 
       setPersistentFetchProgress({
         isVisible: true,
@@ -797,7 +797,7 @@ export const usePersistentOperations = ({
         }
       }
 
-      console.log(`📋 START: Found ${existingEntries.length} existing entries, ${allGuids.length} in sitemap, ${newGuids.length} new`);
+      console.log(`📋 START: Found ${existingIds.size} existing entries, ${allGuids.length} in sitemap, ${newGuids.length} new`);
 
       if (newGuids.length === 0) {
         console.log(`ℹ️ START: No new entries found for ${site.name}`);
