@@ -157,7 +157,8 @@ export class DatabaseService {
 
   async saveEntriesBatch(entries: Entry[]): Promise<void> {
     if (!this.entriesBatchRepo) throw new Error('Entries batch repository not available');
-    
+    if (!this.entriesRepo) throw new Error('Entries repository not available');
+
     if (entries.length === 0) return;
 
     const site = await this.getSiteByUrl(entries[0].siteUrl!);
@@ -165,7 +166,17 @@ export class DatabaseService {
       throw new Error(`Site not found for URL: ${entries[0].siteUrl}`);
     }
 
-    return this.entriesBatchRepo.saveEntriesBatch(entries, site.id);
+    // Only persist entries that aren't already stored
+    const guids = entries.map(e => e.id);
+    const existingIds = new Set(await this.entriesRepo.getExistingEntryIds(site.id, guids));
+    const newEntries = entries.filter(e => !existingIds.has(e.id));
+
+    if (newEntries.length === 0) {
+      console.log(`No new entries to save for site ${site.name}`);
+      return;
+    }
+
+    return this.entriesBatchRepo.saveEntriesBatch(newEntries, site.id);
   }
 
   async deleteEntry(entryId: string): Promise<void> {
