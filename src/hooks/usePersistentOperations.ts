@@ -690,10 +690,29 @@ export const usePersistentOperations = ({
     } catch (error) {
       if (error.name === 'AbortError' || error.message === 'AbortError') {
         console.log(`🛑 FETCH: Operation ${operation.id} was aborted`);
+        // Hide progress display on abort
+        setPersistentFetchProgress({
+          isVisible: false,
+          siteName: '',
+          step: '',
+          current: 0,
+          total: 0,
+          message: ''
+        });
         return; // Don't log as error, this is expected
       }
       console.error(`❌ FETCH ERROR: Failed to resume fetch for ${operation.siteName}:`, error);
       addLog(`❌ Failed to resume fetch for ${operation.siteName}: ${error.message}`, 'error');
+      
+      // Hide progress display on error
+      setPersistentFetchProgress({
+        isVisible: false,
+        siteName: '',
+        step: '',
+        current: 0,
+        total: 0,
+        message: ''
+      });
       
       await PersistentOperationService.failOperation(operation.id, error.message);
     }

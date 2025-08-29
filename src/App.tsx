@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Database, HardDrive, Wifi, WifiOff } from 'lucide-react';
+import { Database, HardDrive, Wifi, WifiOff, X } from 'lucide-react';
 import { Site, Entry, LogEntry } from './types';
 import { StorageService } from './services/StorageService';
 import { ExportService } from './services/ExportService';
