@@ -367,7 +367,7 @@ export const usePersistentOperations = ({
         addLog(`⚠️ Failed to check existing entries, starting from beginning`, 'warning');
         processedGuids = [];
       }
-      
+
       const remainingGuids = guidsToFetch.filter(guid => !processedGuids.includes(guid));
 
       console.log(`📥 FETCH: Total GUIDs to fetch: ${guidsToFetch.length}`);
@@ -444,16 +444,6 @@ export const usePersistentOperations = ({
           `Processing chunk ${Math.floor(i / chunkSize) + 1}: ${overallProgress + 1}-${overallProgress + chunk.length} of ${guidsToFetch.length}`
         );
         
-        // Update progress display
-        setPersistentFetchProgress({
-          isVisible: true,
-          siteName: site.name,
-          step: 'fetching',
-          current: batchProgress + batchEntries.length,
-          total: guidsToFetch.length,
-          message: `💾 Saving batch of ${batchEntries.length} entries to database...`
-        });
-
         // Process this chunk in batches of 50: fetch 50, save 50, fetch 50, save 50...
         for (let batchStart = 0; batchStart < chunk.length; batchStart += fetchBatchSize) {
           // Check if component is still mounted during batch processing
@@ -541,8 +531,9 @@ export const usePersistentOperations = ({
                 },
                 `💾 Saving batch of ${batchEntries.length} entries to database...`
               );
-              
-              // Update progress display
+
+              // Update progress display after saving this batch
+              const overallCompleted = batchProgress + batchEntries.length;
               setPersistentFetchProgress({
                 isVisible: true,
                 siteName: site.name,
