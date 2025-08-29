@@ -53,12 +53,16 @@ const SiteList: React.FC<SiteListProps> = ({
   };
 
   const getSiteOperation = (siteId: string) => {
-    return activeOperations.find(op => op.siteId === siteId && (op.status === 'running' || op.status === 'paused'));
+    const operation = activeOperations.find(op => op.siteId === siteId && (op.status === 'running' || op.status === 'paused'));
+    console.log(`Getting operation for site ${siteId}:`, operation ? `${operation.status} - ${operation.progress.current}/${operation.progress.total}` : 'none');
+    return operation;
   };
 
   const isSiteOperationRunning = (siteId: string) => {
     const operation = getSiteOperation(siteId);
-    return operation && operation.status === 'running';
+    const isRunning = operation && operation.status === 'running';
+    console.log(`Is site ${siteId} operation running:`, isRunning);
+    return isRunning;
   };
 
   return (

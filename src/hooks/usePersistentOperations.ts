@@ -9,13 +9,22 @@ interface UsePersistentOperationsProps {
   setSites: (sites: Site[]) => void;
   addLog: (message: string, type?: 'info' | 'success' | 'error' | 'warning') => void;
   maxEntries: number;
+  setPersistentFetchProgress: (progress: {
+    isVisible: boolean;
+    siteName: string;
+    step: string;
+    current: number;
+    total: number;
+    message: string;
+  }) => void;
 }
 
 export const usePersistentOperations = ({
   sites,
   setSites,
   addLog,
-  maxEntries
+  maxEntries,
+  setPersistentFetchProgress
 }: UsePersistentOperationsProps) => {
   const [activeOperations, setActiveOperations] = useState<PersistentOperation[]>([]);
   const sitesRef = useRef<Site[]>(sites);
@@ -433,6 +442,16 @@ export const usePersistentOperations = ({
           },
           `Processing chunk ${Math.floor(i / chunkSize) + 1}: ${overallProgress + 1}-${overallProgress + chunk.length} of ${guidsToFetch.length}`
         );
+        
+        // Update progress display
+        setPersistentFetchProgress({
+          isVisible: true,
+          siteName: site.name,
+          step: 'fetching',
+          current: overallProgress,
+          total: guidsToFetch.length,
+          message: `Processing chunk ${Math.floor(i / chunkSize) + 1}: ${overallProgress + 1}-${overallProgress + chunk.length} of ${guidsToFetch.length}`
+        });
 
         // Process this chunk in batches of 50: fetch 50, save 50, fetch 50, save 50...
         for (let batchStart = 0; batchStart < chunk.length; batchStart += fetchBatchSize) {
@@ -521,6 +540,16 @@ export const usePersistentOperations = ({
                 },
                 `💾 Saving batch of ${batchEntries.length} entries to database...`
               );
+              
+              // Update progress display
+              setPersistentFetchProgress({
+                isVisible: true,
+                siteName: site.name,
+                step: 'fetching',
+                current: overallCompleted,
+                total: guidsToFetch.length,
+                message: `📥 Fetching batch: ${overallCompleted}/${guidsToFetch.length}`
+              });
               
               // Batch database saves for better performance
               const dbSaveBatch = [];
@@ -741,8 +770,13 @@ export const usePersistentOperations = ({
       await PersistentOperationService.saveOperation(operation);
       
       // Force refresh the operations list immediately
-      const operations = await PersistentOperationService.getActiveOperations();
-      setActiveOperations(operations);
+      try {
+        const operations = await PersistentOperationService.getActiveOperations();
+        setActiveOperations(operations);
+        console.log(`✅ START: Operations list updated, found ${operations.length} active operations`);
+      } catch (error) {
+        console.error('Failed to refresh operations list:', error);
+      }
       
       console.log(`✅ START: Operation saved, starting processing`);
       addLog(`🚀 Started persistent fetch for ${site.name}: ${guidsToFetch.length} entries queued`, 'success');

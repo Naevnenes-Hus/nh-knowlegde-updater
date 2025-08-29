@@ -70,6 +70,23 @@ function App() {
   const [showBackgroundExportModal, setShowBackgroundExportModal] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Add state for persistent fetch progress display
+  const [persistentFetchProgress, setPersistentFetchProgress] = useState<{
+    isVisible: boolean;
+    siteName: string;
+    step: string;
+    current: number;
+    total: number;
+    message: string;
+  }>({
+    isVisible: false,
+    siteName: '',
+    step: '',
+    current: 0,
+    total: 0,
+    message: ''
+  });
+
   const addLog = (message: string, type: 'info' | 'success' | 'error' | 'warning' = 'info') => {
     const log: LogEntry = {
       id: uuidv4(),
@@ -119,7 +136,8 @@ function App() {
     sites,
     setSites,
     addLog,
-    maxEntries
+    maxEntries,
+    setPersistentFetchProgress
   });
   
   const siteOperations = useSiteOperations({
@@ -361,6 +379,49 @@ function App() {
         sites={sites}
         selectedSite={selectedSite}
       />
+      
+      {/* Persistent Fetch Progress Display */}
+      {persistentFetchProgress.isVisible && (
+        <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg border border-gray-200 p-4 max-w-sm z-40">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse"></div>
+              <span className="text-sm font-medium text-gray-900">Persistent Fetch</span>
+            </div>
+            <button
+              onClick={() => setPersistentFetchProgress(prev => ({ ...prev, isVisible: false }))}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          
+          <div className="text-sm text-gray-700 mb-2">
+            <strong>{persistentFetchProgress.siteName}</strong>
+          </div>
+          
+          <div className="text-sm text-gray-600 mb-2">
+            {persistentFetchProgress.message}
+          </div>
+          
+          {persistentFetchProgress.total > 0 && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-gray-600">
+                <span>{persistentFetchProgress.current} / {persistentFetchProgress.total}</span>
+                <span>{Math.round((persistentFetchProgress.current / persistentFetchProgress.total) * 100)}%</span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ 
+                    width: `${Math.min((persistentFetchProgress.current / persistentFetchProgress.total) * 100, 100)}%` 
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
