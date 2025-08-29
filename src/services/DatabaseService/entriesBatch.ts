@@ -75,7 +75,7 @@ export class EntriesBatchRepository {
           .from(tableName)
           .upsert(chunk, {
             onConflict: 'id',
-            ignoreDuplicates: false
+            ignoreDuplicates: true
           });
         
         const { error } = await Promise.race([insertPromise, timeoutPromise]);
@@ -151,7 +151,7 @@ export class EntriesBatchRepository {
             .from(tableName)
             .upsert(chunk, {
               onConflict: 'id',
-              ignoreDuplicates: false
+              ignoreDuplicates: true
             });
           
           const { error } = await Promise.race([insertPromise, timeoutPromise]);
