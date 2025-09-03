@@ -106,25 +106,25 @@ export class ExportService {
             // Sort entries by published date (newest first)
             entries.sort((a, b) => new Date(b.publishedDate).getTime() - new Date(a.publishedDate).getTime());
             
-            // Group entries by publication date
-            const entriesByDate = this.groupEntriesByDate(entries);
+            // Group entries by publication quarter
+            const entriesByQuarter = this.groupEntriesByQuarter(entries);
             
             // Process entries in batches to avoid blocking the UI
             const batchSize = 100;
             
-            // Process each date group
-            for (const [dateFolder, dateEntries] of Object.entries(entriesByDate)) {
-              const dateFolderInSite = siteFolder.folder(dateFolder);
-              
-              if (dateFolderInSite) {
-                for (let i = 0; i < dateEntries.length; i += batchSize) {
-                  const batch = dateEntries.slice(i, i + batchSize);
+            // Process each quarter group
+            for (const [quarterFolder, quarterEntries] of Object.entries(entriesByQuarter)) {
+              const quarterFolderInSite = siteFolder.folder(quarterFolder);
+
+              if (quarterFolderInSite) {
+                for (let i = 0; i < quarterEntries.length; i += batchSize) {
+                  const batch = quarterEntries.slice(i, i + batchSize);
                   
                   batch.forEach((entry) => {
                     // Use the GUID (entry.id) as the filename
                     const fileName = `${this.sanitizeFileName(entry.id)}.txt`;
                     const content = this.formatEntryContent(entry);
-                    dateFolderInSite.file(fileName, content);
+                    quarterFolderInSite.file(fileName, content);
                     totalEntries++;
                     processedEntries++;
                   });
@@ -141,7 +141,7 @@ export class ExportService {
                   });
                   
                   // Small delay to prevent blocking
-                  if (i + batchSize < dateEntries.length) {
+                  if (i + batchSize < quarterEntries.length) {
                     await new Promise(resolve => setTimeout(resolve, 10));
                   }
                 }
@@ -269,32 +269,33 @@ export class ExportService {
   }
 
   /**
-   * Group entries by their publication date
+   * Group entries by their publication quarter
    */
-  private static groupEntriesByDate(entries: Entry[]): { [dateFolder: string]: Entry[] } {
-    const groups: { [dateFolder: string]: Entry[] } = {};
-    
+  private static groupEntriesByQuarter(entries: Entry[]): { [quarterFolder: string]: Entry[] } {
+    const groups: { [quarterFolder: string]: Entry[] } = {};
+
     entries.forEach(entry => {
-      let dateFolder = 'unknown-date';
-      
+      let quarterFolder = 'unknown-quarter';
+
       if (entry.publishedDate) {
         try {
           const date = new Date(entry.publishedDate);
           if (!isNaN(date.getTime())) {
-            // Format as YYYY-MM-DD
-            dateFolder = date.toISOString().split('T')[0];
+            const year = date.getFullYear();
+            const quarter = Math.floor(date.getMonth() / 3) + 1;
+            quarterFolder = `${year}-q${quarter}`;
           }
         } catch (error) {
           console.warn(`Invalid date format for entry ${entry.id}: ${entry.publishedDate}`);
         }
       }
-      
-      if (!groups[dateFolder]) {
-        groups[dateFolder] = [];
+
+      if (!groups[quarterFolder]) {
+        groups[quarterFolder] = [];
       }
-      groups[dateFolder].push(entry);
+      groups[quarterFolder].push(entry);
     });
-    
+
     return groups;
   }
 
@@ -312,18 +313,18 @@ export class ExportService {
     const zip = new JSZip();
     let processedCount = 0;
     
-    // Group entries by publication date
-    const entriesByDate = this.groupEntriesByDate(entries);
-    
-    console.log(`Grouped entries into ${Object.keys(entriesByDate).length} date folders`);
-    
-    // Process each date group
-    for (const [dateFolder, dateEntries] of Object.entries(entriesByDate)) {
-      console.log(`Processing date folder: ${dateFolder} with ${dateEntries.length} entries`);
-      const dateFolderInZip = zip.folder(dateFolder);
-      
-      if (dateFolderInZip) {
-        dateEntries.forEach((entry) => {
+    // Group entries by publication quarter
+    const entriesByQuarter = this.groupEntriesByQuarter(entries);
+
+    console.log(`Grouped entries into ${Object.keys(entriesByQuarter).length} quarter folders`);
+
+    // Process each quarter group
+    for (const [quarterFolder, quarterEntries] of Object.entries(entriesByQuarter)) {
+      console.log(`Processing quarter folder: ${quarterFolder} with ${quarterEntries.length} entries`);
+      const quarterFolderInZip = zip.folder(quarterFolder);
+
+      if (quarterFolderInZip) {
+        quarterEntries.forEach((entry) => {
           // Use the GUID (entry.id) as the filename
           const fileName = `${this.sanitizeFileName(entry.id)}.txt`;
           const content = this.formatEntryContent(entry);
@@ -332,12 +333,11 @@ export class ExportService {
           if (!content || content.trim().length === 0) {
             console.warn(`Empty content for entry ${entry.id}, adding placeholder`);
             const placeholderContent = `Entry ID: ${entry.id}\nTitle: ${entry.title || 'No title'}\nError: Content was empty or invalid`;
-            dateFolderInZip.file(fileName, placeholderContent);
+            quarterFolderInZip.file(fileName, placeholderContent);
           } else {
-            dateFolderInZip.file(fileName, content);
+            quarterFolderInZip.file(fileName, content);
           }
-          
-          dateFolderInZip.file(fileName, content);
+
           processedCount++;
           
           // Update progress every 10 entries or on the last entry
